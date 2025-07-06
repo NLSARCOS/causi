@@ -2,8 +2,8 @@
 /**
  * Plugin Name: StaticBoost Pro
  * Plugin URI: https://github.com/yourname/staticboost-pro
- * Description: Convierte tu sitio WordPress en páginas estáticas ultrarrápidas con optimización inteligente usando BoostAI™ (nuestro sistema de Machine Learning propietario).
- * Version: 2.0.0
+ * Description: Convierte tu sitio WordPress en páginas estáticas ultrarrápidas con optimización inteligente usando BoostAI™ (nuestro sistema de Machine Learning propietario) + CDN Local Ultra.
+ * Version: 2.1.0
  * Author: Tu Nombre
  * Author URI: https://tusitio.com
  * License: GPL v2 or later
@@ -24,7 +24,7 @@ define('SBP_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('SBP_CACHE_DIR', WP_CONTENT_DIR . '/cache/staticboost-pro/');
 define('SBP_ASSETS_DIR', SBP_CACHE_DIR . 'assets/');
 define('SBP_ML_DIR', SBP_PLUGIN_PATH . 'ml/');
-define('SBP_VERSION', '2.0.0');
+define('SBP_VERSION', '2.1.0');
 
 // Incluir archivos necesarios
 require_once SBP_PLUGIN_PATH . 'includes/class-staticboost-core.php';
@@ -33,6 +33,7 @@ require_once SBP_PLUGIN_PATH . 'includes/class-woocommerce-compat.php';
 require_once SBP_PLUGIN_PATH . 'includes/class-boostai-optimizer.php';
 require_once SBP_PLUGIN_PATH . 'includes/class-pagespeed-optimizer.php';
 require_once SBP_PLUGIN_PATH . 'includes/class-asset-optimizer.php';
+require_once SBP_PLUGIN_PATH . 'includes/class-local-cdn.php';
 require_once SBP_PLUGIN_PATH . 'includes/functions.php';
 
 // Inicializar el plugin
@@ -56,6 +57,8 @@ function sbp_init() {
     
     // Asset Optimizer
     new SBP_Asset_Optimizer();
+    
+    // CDN Local Ultra (se inicializa automáticamente)
 }
 add_action('plugins_loaded', 'sbp_init');
 
@@ -69,7 +72,14 @@ function sbp_activate() {
         SBP_CACHE_DIR . 'css/',
         SBP_CACHE_DIR . 'js/',
         SBP_CACHE_DIR . 'images/',
-        SBP_CACHE_DIR . 'fonts/'
+        SBP_CACHE_DIR . 'fonts/',
+        SBP_CACHE_DIR . 'cdn/',
+        SBP_CACHE_DIR . 'cdn/images/',
+        SBP_CACHE_DIR . 'cdn/styles/',
+        SBP_CACHE_DIR . 'cdn/scripts/',
+        SBP_CACHE_DIR . 'cdn/fonts/',
+        SBP_CACHE_DIR . 'cdn/videos/',
+        SBP_CACHE_DIR . 'cdn/documents/'
     ];
     
     foreach ($directories as $dir) {
@@ -95,11 +105,13 @@ function sbp_activate() {
     add_option('sbp_aggressive_optimization', false);
     add_option('sbp_image_optimization', true);
     add_option('sbp_critical_css', true);
-    add_option('sbp_pagespeed_mode', true); // NUEVO: Modo PageSpeed
+    add_option('sbp_pagespeed_mode', true);
     add_option('sbp_preload_critical_resources', true);
     add_option('sbp_eliminate_render_blocking', true);
     add_option('sbp_optimize_lcp', true);
     add_option('sbp_minimize_main_thread', true);
+    add_option('sbp_local_cdn_enabled', true); // NUEVO: CDN Local habilitado por defecto
+    add_option('sbp_local_cdn_aggressive', false); // NUEVO: Modo CDN conservador por defecto
     
     // Programar tareas de optimización
     if (!wp_next_scheduled('sbp_boostai_analysis')) {
@@ -113,6 +125,9 @@ function sbp_activate() {
     if (!wp_next_scheduled('sbp_pagespeed_optimization')) {
         wp_schedule_event(time(), 'twicedaily', 'sbp_pagespeed_optimization');
     }
+    
+    // Flush rewrite rules para CDN local
+    flush_rewrite_rules();
 }
 
 // Desactivación del plugin
@@ -131,6 +146,9 @@ function sbp_deactivate() {
     if (file_exists($htaccess_path)) {
         unlink($htaccess_path);
     }
+    
+    // Flush rewrite rules
+    flush_rewrite_rules();
 }
 
 // Crear tablas para analytics BoostAI
@@ -179,12 +197,15 @@ function sbp_create_analytics_tables() {
     dbDelta($sql_config);
 }
 
-// Crear .htaccess optimizado para PageSpeed 100/100
+// Crear .htaccess optimizado para PageSpeed 100/100 + CDN Local
 function sbp_create_pagespeed_htaccess() {
     $htaccess_content = '
-# StaticBoost Pro - PageSpeed 100/100 Optimization
+# StaticBoost Pro - PageSpeed 100/100 + CDN Local Ultra
 <IfModule mod_rewrite.c>
 RewriteEngine On
+
+# CDN Local - Servir assets optimizados
+RewriteRule ^sbp-cdn/(.+)$ index.php?sbp_cdn_asset=$1 [QSA,L]
 
 # Servir archivos estáticos HTML directamente (MÁXIMA VELOCIDAD)
 RewriteCond %{REQUEST_METHOD} GET
@@ -200,8 +221,7 @@ RewriteCond %{REQUEST_URI} !^/wp-includes/
 RewriteCond %{REQUEST_URI} !^/cart/
 RewriteCond %{REQUEST_URI} !^/checkout/
 RewriteCond %{REQUEST_URI} !^/my-account/
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/sbp-cdn/
 
 # Para página principal
 RewriteCond %{REQUEST_URI} ^/$
@@ -214,7 +234,7 @@ RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/staticboost-pro%{REQUEST_URI}/inde
 RewriteRule ^(.*)$ wp-content/cache/staticboost-pro/$1/index.html [L]
 </IfModule>
 
-# Headers para PageSpeed 100/100
+# Headers para PageSpeed 100/100 + CDN Local
 <IfModule mod_expires.c>
 ExpiresActive On
 ExpiresByType text/html "access plus 1 hour"
@@ -229,16 +249,16 @@ ExpiresByType image/avif "access plus 1 year"
 ExpiresByType font/woff "access plus 1 year"
 ExpiresByType font/woff2 "access plus 1 year"
 ExpiresByType image/svg+xml "access plus 1 year"
+ExpiresByType video/mp4 "access plus 1 month"
+ExpiresByType video/webm "access plus 1 month"
 </IfModule>
 
-# Compresión máxima para PageSpeed
+# Compresión máxima para PageSpeed + CDN
 <IfModule mod_deflate.c>
 AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json image/svg+xml text/xml application/xml application/rss+xml
 SetOutputFilter DEFLATE
-SetEnvIfNoCase Request_URI \
-    \.(?:gif|jpe?g|png|webp|avif)$ no-gzip dont-vary
-SetEnvIfNoCase Request_URI \
-    \.(?:exe|t?gz|zip|bz2|sit|rar)$ no-gzip dont-vary
+SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|webp|avif|mp4|webm)$ no-gzip dont-vary
+SetEnvIfNoCase Request_URI \.(?:exe|t?gz|zip|bz2|sit|rar)$ no-gzip dont-vary
 </IfModule>
 
 # Brotli compression (si está disponible)
@@ -246,15 +266,15 @@ SetEnvIfNoCase Request_URI \
 AddOutputFilterByType BROTLI_COMPRESS text/html text/css text/javascript application/javascript application/json image/svg+xml
 </IfModule>
 
-# Headers de caché optimizados para PageSpeed
+# Headers de caché optimizados para CDN Local
 <IfModule mod_headers.c>
 Header set X-Static-Cache "HIT"
-Header set X-Powered-By "StaticBoost Pro"
-Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{REQUEST_URI} =~ m#\.(css|js|png|jpg|jpeg|gif|webp|avif|woff|woff2|svg)$#"
+Header set X-StaticBoost "PRO-CDN"
+Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{REQUEST_URI} =~ m#\.(css|js|png|jpg|jpeg|gif|webp|avif|woff|woff2|svg|mp4|webm)$#"
 Header set Cache-Control "public, max-age=3600" "expr=%{REQUEST_URI} =~ m#\.html$#"
 
 # Preload headers críticos para LCP
-Header add Link "</wp-content/cache/staticboost-pro/css/critical.css>; rel=preload; as=style"
+Header add Link "</wp-content/cache/staticboost-pro/css/critical-pagespeed.css>; rel=preload; as=style"
 Header add Link "<https://fonts.googleapis.com>; rel=preconnect"
 Header add Link "<https://fonts.gstatic.com>; rel=preconnect; crossorigin"
 
@@ -262,21 +282,37 @@ Header add Link "<https://fonts.gstatic.com>; rel=preconnect; crossorigin"
 Header always set X-Content-Type-Options nosniff
 Header always set X-Frame-Options DENY
 Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+# CDN Local headers
+Header set X-CDN-Cache "LOCAL-ULTRA" "expr=%{REQUEST_URI} =~ m#^/sbp-cdn/#"
+Header set X-Served-By "StaticBoost-Pro-CDN" "expr=%{REQUEST_URI} =~ m#^/sbp-cdn/#"
 </IfModule>
 
-# Optimización de fuentes para PageSpeed
+# Optimización de fuentes para CDN Local
 <IfModule mod_headers.c>
-<FilesMatch "\.(woff|woff2|eot|ttf)$">
+<FilesMatch "\.(woff|woff2|eot|ttf|otf)$">
 Header set Cache-Control "public, max-age=31536000, immutable"
 Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET"
+Header set Access-Control-Allow-Headers "Range"
 </FilesMatch>
 </IfModule>
 
-# Seguridad adicional
-<Files "*.json">
-Order allow,deny
-Deny from all
-</Files>
+# Optimización de imágenes para CDN Local
+<IfModule mod_headers.c>
+<FilesMatch "\.(jpg|jpeg|png|gif|webp|avif|svg)$">
+Header set Accept-Ranges "bytes"
+Header set X-Image-Optimized "StaticBoost-Pro"
+</FilesMatch>
+</IfModule>
+
+# Optimización de videos para CDN Local
+<IfModule mod_headers.c>
+<FilesMatch "\.(mp4|webm|ogg)$">
+Header set Accept-Ranges "bytes"
+Header set X-Video-Optimized "StaticBoost-Pro"
+</FilesMatch>
+</IfModule>
 ';
     
     file_put_contents(SBP_CACHE_DIR . '.htaccess', $htaccess_content);
@@ -292,6 +328,9 @@ Deny from all
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
+# CDN Local - Servir assets optimizados
+RewriteRule ^sbp-cdn/(.+)$ index.php?sbp_cdn_asset=$1 [QSA,L]
+
 # Servir archivos estáticos HTML directamente (MÁXIMA VELOCIDAD)
 RewriteCond %{REQUEST_METHOD} GET
 RewriteCond %{QUERY_STRING} ^$
@@ -306,6 +345,7 @@ RewriteCond %{REQUEST_URI} !^/wp-includes/
 RewriteCond %{REQUEST_URI} !^/cart/
 RewriteCond %{REQUEST_URI} !^/checkout/
 RewriteCond %{REQUEST_URI} !^/my-account/
+RewriteCond %{REQUEST_URI} !^/sbp-cdn/
 
 # Para página principal
 RewriteCond %{REQUEST_URI} ^/$

@@ -17,6 +17,13 @@ class SBP_Admin {
         add_action('wp_ajax_sbp_get_stats', array($this, 'ajax_get_stats'));
         add_action('wp_ajax_sbp_preload_cache', array($this, 'ajax_preload_cache'));
         add_action('wp_ajax_sbp_optimize_assets', array($this, 'ajax_optimize_assets'));
+        
+        // NUEVOS AJAX handlers para seguimiento en tiempo real
+        add_action('wp_ajax_sbp_start_optimization', array($this, 'ajax_start_optimization'));
+        add_action('wp_ajax_sbp_pause_optimization', array($this, 'ajax_pause_optimization'));
+        add_action('wp_ajax_sbp_resume_optimization', array($this, 'ajax_resume_optimization'));
+        add_action('wp_ajax_sbp_stop_optimization', array($this, 'ajax_stop_optimization'));
+        add_action('wp_ajax_sbp_get_optimization_status', array($this, 'ajax_get_optimization_status'));
     }
     
     public function add_admin_menu() {
@@ -45,6 +52,8 @@ class SBP_Admin {
         register_setting('sbp_settings', 'sbp_eliminate_render_blocking');
         register_setting('sbp_settings', 'sbp_optimize_lcp');
         register_setting('sbp_settings', 'sbp_minimize_main_thread');
+        register_setting('sbp_settings', 'sbp_local_cdn_enabled');
+        register_setting('sbp_settings', 'sbp_local_cdn_aggressive');
     }
     
     public function admin_page() {
@@ -55,12 +64,13 @@ class SBP_Admin {
         $asset_optimization = get_option('sbp_asset_optimization', true);
         $aggressive_optimization = get_option('sbp_aggressive_optimization', false);
         $pagespeed_mode = get_option('sbp_pagespeed_mode', true);
+        $local_cdn_enabled = get_option('sbp_local_cdn_enabled', true);
         $progress_percent = $total_pages['total'] > 0 ? round(($stats['files'] / $total_pages['total']) * 100, 1) : 0;
         ?>
         <div class="wrap">
             <div class="sbp-header">
                 <h1>⚡ StaticBoost Pro</h1>
-                <p class="sbp-tagline">Páginas estáticas ultrarrápidas con BoostAI™</p>
+                <p class="sbp-tagline">Páginas estáticas ultrarrápidas con BoostAI™ + CDN Local</p>
             </div>
             
             <!-- Control Principal -->
@@ -76,6 +86,9 @@ class SBP_Admin {
                         <?php endif; ?>
                         <?php if ($pagespeed_mode): ?>
                         <p class="sbp-pagespeed-status">🚀 Modo PageSpeed 100/100</p>
+                        <?php endif; ?>
+                        <?php if ($local_cdn_enabled): ?>
+                        <p class="sbp-cdn-status">🌐 CDN Local Activo</p>
                         <?php endif; ?>
                     </div>
                     <div class="sbp-toggle">
@@ -129,7 +142,7 @@ class SBP_Admin {
                     </button>
                     <button type="button" id="sbp-optimize-assets" class="sbp-btn sbp-btn-info">
                         <span class="sbp-btn-icon">🎯</span>
-                        Optimizar PageSpeed
+                        Optimizar Assets
                     </button>
                     <button type="button" id="sbp-clear-cache" class="sbp-btn sbp-btn-danger">
                         <span class="sbp-btn-icon">🗑️</span>
@@ -156,6 +169,19 @@ class SBP_Admin {
                         <?php settings_fields('sbp_settings'); ?>
                         
                         <table class="form-table">
+                            <tr>
+                                <th scope="row">🌐 CDN Local Ultra</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_local_cdn_enabled" value="1" <?php checked(get_option('sbp_local_cdn_enabled', true)); ?> />
+                                    <label><strong>Activar CDN Local (RECOMENDADO)</strong></label>
+                                    <p class="description">Servir assets optimizados desde el servidor local con headers de CDN profesional</p>
+                                    
+                                    <br><br>
+                                    <input type="checkbox" name="sbp_local_cdn_aggressive" value="1" <?php checked(get_option('sbp_local_cdn_aggressive', false)); ?> />
+                                    <label><strong>Modo CDN Agresivo</strong></label>
+                                    <p class="description">Optimizaciones avanzadas: Brotli, HTTP/2 Push, Edge Caching</p>
+                                </td>
+                            </tr>
                             <tr>
                                 <th scope="row">🚀 Modo PageSpeed 100/100</th>
                                 <td>
@@ -255,6 +281,16 @@ class SBP_Admin {
                         <?php echo $boostai_enabled ? '✅ Habilitado' : '❌ Deshabilitado'; ?>
                     </div>
                     <div class="sbp-info-item">
+                        <strong>CDN Local:</strong> 
+                        <?php 
+                        if ($local_cdn_enabled) {
+                            echo get_option('sbp_local_cdn_aggressive', false) ? '🚀 Modo Agresivo' : '✅ Modo Estándar';
+                        } else {
+                            echo '❌ Deshabilitado';
+                        }
+                        ?>
+                    </div>
+                    <div class="sbp-info-item">
                         <strong>Optimización de Assets:</strong> 
                         <?php 
                         if ($asset_optimization) {
@@ -279,6 +315,87 @@ class SBP_Admin {
                     <p><strong>⚠️ ADVERTENCIA:</strong> El modo agresivo está activado. Si experimentas problemas visuales, desactívalo.</p>
                 </div>
                 <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- MODAL DE SEGUIMIENTO EN TIEMPO REAL -->
+        <div id="sbp-optimization-modal" class="sbp-modal" style="display: none;">
+            <div class="sbp-modal-content">
+                <div class="sbp-modal-header">
+                    <h2>🎯 Optimización de Assets en Tiempo Real</h2>
+                    <button class="sbp-modal-close">&times;</button>
+                </div>
+                
+                <div class="sbp-modal-body">
+                    <!-- Estado General -->
+                    <div class="sbp-optimization-status">
+                        <div class="sbp-status-indicator">
+                            <span id="sbp-status-icon">⏳</span>
+                            <span id="sbp-status-text">Preparando optimización...</span>
+                        </div>
+                        <div class="sbp-status-progress">
+                            <div class="sbp-progress-bar">
+                                <div id="sbp-modal-progress-fill" class="sbp-progress-fill" style="width: 0%"></div>
+                            </div>
+                            <span id="sbp-progress-percentage">0%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Controles -->
+                    <div class="sbp-optimization-controls">
+                        <button id="sbp-pause-btn" class="sbp-btn sbp-btn-warning" style="display: none;">
+                            <span class="sbp-btn-icon">⏸️</span>
+                            Pausar
+                        </button>
+                        <button id="sbp-resume-btn" class="sbp-btn sbp-btn-success" style="display: none;">
+                            <span class="sbp-btn-icon">▶️</span>
+                            Reanudar
+                        </button>
+                        <button id="sbp-stop-btn" class="sbp-btn sbp-btn-danger" style="display: none;">
+                            <span class="sbp-btn-icon">⏹️</span>
+                            Detener
+                        </button>
+                    </div>
+                    
+                    <!-- Lista de Páginas -->
+                    <div class="sbp-pages-container">
+                        <h3>📄 Estado de las Páginas</h3>
+                        
+                        <!-- Filtros -->
+                        <div class="sbp-filters">
+                            <button class="sbp-filter-btn active" data-filter="all">Todas</button>
+                            <button class="sbp-filter-btn" data-filter="optimized">✅ Optimizadas</button>
+                            <button class="sbp-filter-btn" data-filter="optimizing">⏳ Optimizando</button>
+                            <button class="sbp-filter-btn" data-filter="pending">⏸️ Pendientes</button>
+                            <button class="sbp-filter-btn" data-filter="error">❌ Errores</button>
+                        </div>
+                        
+                        <!-- Lista de páginas -->
+                        <div id="sbp-pages-list" class="sbp-pages-list">
+                            <!-- Se llena dinámicamente -->
+                        </div>
+                    </div>
+                    
+                    <!-- Estadísticas en tiempo real -->
+                    <div class="sbp-real-time-stats">
+                        <div class="sbp-stat-item">
+                            <span class="sbp-stat-label">Optimizadas:</span>
+                            <span id="sbp-stat-optimized" class="sbp-stat-value">0</span>
+                        </div>
+                        <div class="sbp-stat-item">
+                            <span class="sbp-stat-label">En proceso:</span>
+                            <span id="sbp-stat-processing" class="sbp-stat-value">0</span>
+                        </div>
+                        <div class="sbp-stat-item">
+                            <span class="sbp-stat-label">Pendientes:</span>
+                            <span id="sbp-stat-pending" class="sbp-stat-value">0</span>
+                        </div>
+                        <div class="sbp-stat-item">
+                            <span class="sbp-stat-label">Errores:</span>
+                            <span id="sbp-stat-errors" class="sbp-stat-value">0</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -338,14 +455,14 @@ class SBP_Admin {
             color: #d63638;
         }
         
-        .sbp-ai-status, .sbp-pagespeed-status {
+        .sbp-ai-status, .sbp-pagespeed-status, .sbp-cdn-status {
             margin: 0;
             font-size: 13px;
             color: #0073aa;
             font-weight: 500;
         }
         
-        /* Switch Toggle - Más pequeño */
+        /* Switch Toggle */
         .sbp-switch {
             position: relative;
             display: inline-block;
@@ -512,6 +629,16 @@ class SBP_Admin {
             box-shadow: 0 6px 20px rgba(214,54,56,0.3);
         }
         
+        .sbp-btn-warning {
+            background: linear-gradient(135deg, #f56e28, #e65100);
+            color: white;
+        }
+        
+        .sbp-btn-success {
+            background: linear-gradient(135deg, #00a32a, #008a20);
+            color: white;
+        }
+        
         .sbp-btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
@@ -520,6 +647,241 @@ class SBP_Admin {
         
         .sbp-btn-icon {
             font-size: 18px;
+        }
+        
+        /* Modal */
+        .sbp-modal {
+            position: fixed;
+            z-index: 999999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px);
+        }
+        
+        .sbp-modal-content {
+            background-color: #fff;
+            margin: 2% auto;
+            padding: 0;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 1000px;
+            max-height: 90vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: sbpModalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes sbpModalSlideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .sbp-modal-header {
+            background: linear-gradient(135deg, #0073aa, #00a32a);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .sbp-modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        .sbp-modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.3s;
+        }
+        
+        .sbp-modal-close:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .sbp-modal-body {
+            padding: 30px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        
+        /* Estado de optimización */
+        .sbp-optimization-status {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+        
+        .sbp-status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        #sbp-status-icon {
+            font-size: 24px;
+        }
+        
+        #sbp-status-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .sbp-status-progress {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .sbp-status-progress .sbp-progress-bar {
+            flex: 1;
+            height: 12px;
+        }
+        
+        #sbp-progress-percentage {
+            font-weight: 600;
+            color: #0073aa;
+            min-width: 40px;
+        }
+        
+        /* Controles */
+        .sbp-optimization-controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+        
+        .sbp-optimization-controls .sbp-btn {
+            min-width: 120px;
+        }
+        
+        /* Filtros */
+        .sbp-filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .sbp-filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .sbp-filter-btn.active {
+            background: #0073aa;
+            color: white;
+            border-color: #0073aa;
+        }
+        
+        .sbp-filter-btn:hover {
+            border-color: #0073aa;
+            color: #0073aa;
+        }
+        
+        .sbp-filter-btn.active:hover {
+            color: white;
+        }
+        
+        /* Lista de páginas */
+        .sbp-pages-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .sbp-page-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid #eee;
+            transition: background 0.3s;
+        }
+        
+        .sbp-page-item:last-child {
+            border-bottom: none;
+        }
+        
+        .sbp-page-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .sbp-page-status {
+            font-size: 18px;
+            margin-right: 15px;
+            min-width: 25px;
+        }
+        
+        .sbp-page-url {
+            flex: 1;
+            font-size: 14px;
+            color: #333;
+            word-break: break-all;
+        }
+        
+        .sbp-page-time {
+            font-size: 12px;
+            color: #666;
+            margin-left: 15px;
+        }
+        
+        /* Estadísticas en tiempo real */
+        .sbp-real-time-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid #eee;
+        }
+        
+        .sbp-stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .sbp-stat-item .sbp-stat-label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .sbp-stat-item .sbp-stat-value {
+            display: block;
+            font-size: 24px;
+            font-weight: bold;
+            color: #0073aa;
         }
         
         /* Progreso de Generación */
@@ -604,6 +966,20 @@ class SBP_Admin {
             .sbp-system-info {
                 grid-template-columns: 1fr;
             }
+            
+            .sbp-modal-content {
+                width: 95%;
+                margin: 5% auto;
+            }
+            
+            .sbp-optimization-controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .sbp-filters {
+                justify-content: center;
+            }
         }
         </style>
         <?php
@@ -652,7 +1028,7 @@ class SBP_Admin {
         ));
     }
     
-    // AJAX Handlers (actualizados con nuevos nombres)
+    // AJAX Handlers existentes...
     public function ajax_toggle_cache() {
         check_ajax_referer('sbp_nonce', 'nonce');
         
@@ -765,5 +1141,117 @@ class SBP_Admin {
         } catch (Exception $e) {
             wp_send_json_error('Error durante la optimización: ' . $e->getMessage());
         }
+    }
+    
+    // NUEVOS AJAX handlers para seguimiento en tiempo real
+    public function ajax_start_optimization() {
+        check_ajax_referer('sbp_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        // Inicializar estado de optimización
+        update_option('sbp_optimization_status', 'running');
+        update_option('sbp_optimization_progress', 0);
+        update_option('sbp_optimization_current_page', 0);
+        
+        // Obtener lista de URLs a optimizar
+        $urls = sbp_get_all_site_urls();
+        update_option('sbp_optimization_urls', $urls);
+        update_option('sbp_optimization_results', array());
+        
+        wp_send_json_success(array(
+            'status' => 'started',
+            'total_pages' => count($urls),
+            'urls' => array_slice($urls, 0, 10) // Solo primeras 10 para mostrar
+        ));
+    }
+    
+    public function ajax_pause_optimization() {
+        check_ajax_referer('sbp_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        update_option('sbp_optimization_status', 'paused');
+        
+        wp_send_json_success(array(
+            'status' => 'paused',
+            'message' => 'Optimización pausada'
+        ));
+    }
+    
+    public function ajax_resume_optimization() {
+        check_ajax_referer('sbp_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        update_option('sbp_optimization_status', 'running');
+        
+        wp_send_json_success(array(
+            'status' => 'running',
+            'message' => 'Optimización reanudada'
+        ));
+    }
+    
+    public function ajax_stop_optimization() {
+        check_ajax_referer('sbp_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        update_option('sbp_optimization_status', 'stopped');
+        
+        wp_send_json_success(array(
+            'status' => 'stopped',
+            'message' => 'Optimización detenida'
+        ));
+    }
+    
+    public function ajax_get_optimization_status() {
+        check_ajax_referer('sbp_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        $status = get_option('sbp_optimization_status', 'idle');
+        $progress = get_option('sbp_optimization_progress', 0);
+        $current_page = get_option('sbp_optimization_current_page', 0);
+        $urls = get_option('sbp_optimization_urls', array());
+        $results = get_option('sbp_optimization_results', array());
+        
+        $stats = array(
+            'optimized' => 0,
+            'processing' => 0,
+            'pending' => 0,
+            'errors' => 0
+        );
+        
+        foreach ($results as $result) {
+            if ($result['status'] === 'success') {
+                $stats['optimized']++;
+            } elseif ($result['status'] === 'processing') {
+                $stats['processing']++;
+            } elseif ($result['status'] === 'error') {
+                $stats['errors']++;
+            }
+        }
+        
+        $stats['pending'] = count($urls) - $stats['optimized'] - $stats['errors'];
+        
+        wp_send_json_success(array(
+            'status' => $status,
+            'progress' => $progress,
+            'current_page' => $current_page,
+            'total_pages' => count($urls),
+            'stats' => $stats,
+            'recent_results' => array_slice($results, -10) // Últimos 10 resultados
+        ));
     }
 }
