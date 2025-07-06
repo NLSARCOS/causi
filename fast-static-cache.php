@@ -28,41 +28,61 @@ define('SBP_VERSION', '2.1.0');
 
 // Incluir archivos necesarios
 require_once SBP_PLUGIN_PATH . 'includes/class-staticboost-core.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-admin.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-woocommerce-compat.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-boostai-optimizer.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-pagespeed-optimizer.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-asset-optimizer.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-local-cdn.php';
 require_once SBP_PLUGIN_PATH . 'includes/functions.php';
 
-// Inicializar el plugin
-function sbp_init() {
-    new StaticBoost_Core();
-    
+// Solo cargar clases necesarias según el contexto
+function sbp_load_required_classes() {
+    // Admin siempre
     if (is_admin()) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-admin.php';
         new SBP_Admin();
     }
     
-    // Compatibilidad WooCommerce
-    if (class_exists('WooCommerce')) {
-        new SBP_WooCommerce_Compat();
+    // BoostAI solo si está habilitado
+    if (get_option('sbp_boostai_enabled', true)) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-boostai-optimizer.php';
+        new SBP_BoostAI_Optimizer();
     }
     
-    // BoostAI™ Optimizer
-    new SBP_BoostAI_Optimizer();
+    // PageSpeed solo si está habilitado
+    if (get_option('sbp_pagespeed_mode', true)) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-pagespeed-optimizer.php';
+        new SBP_PageSpeed_Optimizer();
+    }
     
-    // PageSpeed Optimizer
-    new SBP_PageSpeed_Optimizer();
+    // Asset Optimizer solo si alguna optimización está habilitada
+    if (get_option('sbp_optimize_images', true) || 
+        get_option('sbp_optimize_css', true) || 
+        get_option('sbp_optimize_js', false) || 
+        get_option('sbp_webp_conversion', true)) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-asset-optimizer.php';
+        new SBP_Asset_Optimizer();
+    }
     
-    // Asset Optimizer
-    new SBP_Asset_Optimizer();
+    // CDN Local solo si está habilitado
+    if (get_option('sbp_local_cdn_enabled', true)) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-local-cdn.php';
+        new SBP_Local_CDN();
+    }
     
-    // CDN Local Ultra (se inicializa automáticamente)
+    // WooCommerce solo si está activo
+    if (class_exists('WooCommerce')) {
+        require_once SBP_PLUGIN_PATH . 'includes/class-woocommerce-compat.php';
+        new SBP_WooCommerce_Compat();
+    }
 }
-add_action('plugins_loaded', 'sbp_init');
 
-// Activación del plugin
+// Inicializar el plugin de forma optimizada
+function sbp_init() {
+    // Core siempre se carga
+    new StaticBoost_Core();
+    
+    // Cargar otras clases según necesidad
+    sbp_load_required_classes();
+}
+add_action('plugins_loaded', 'sbp_init', 1);
+
+// Activación del plugin - OPTIMIZADA
 register_activation_hook(__FILE__, 'sbp_activate');
 function sbp_activate() {
     // Crear directorios necesarios
@@ -94,26 +114,36 @@ function sbp_activate() {
     // Crear archivo .htaccess optimizado para PageSpeed
     sbp_create_pagespeed_htaccess();
     
-    // Configuración por defecto optimizada para PageSpeed
-    add_option('sbp_enabled', true);
-    add_option('sbp_cache_lifetime', 3600);
-    add_option('sbp_excluded_pages', array('/cart', '/checkout', '/my-account'));
-    add_option('sbp_excluded_user_agents', array('bot', 'crawler', 'spider'));
-    add_option('sbp_show_cache_info', true);
-    add_option('sbp_boostai_enabled', true);
-    add_option('sbp_asset_optimization', true);
-    add_option('sbp_aggressive_optimization', false);
-    add_option('sbp_image_optimization', true);
-    add_option('sbp_critical_css', true);
-    add_option('sbp_pagespeed_mode', true);
-    add_option('sbp_preload_critical_resources', true);
-    add_option('sbp_eliminate_render_blocking', true);
-    add_option('sbp_optimize_lcp', true);
-    add_option('sbp_minimize_main_thread', true);
-    add_option('sbp_local_cdn_enabled', true); // NUEVO: CDN Local habilitado por defecto
-    add_option('sbp_local_cdn_aggressive', false); // NUEVO: Modo CDN conservador por defecto
+    // Configuración por defecto optimizada
+    $default_options = array(
+        'sbp_enabled' => true,
+        'sbp_cache_lifetime' => 3600,
+        'sbp_excluded_pages' => array('/cart', '/checkout', '/my-account'),
+        'sbp_excluded_user_agents' => array('bot', 'crawler', 'spider'),
+        'sbp_show_cache_info' => true,
+        'sbp_boostai_enabled' => true,
+        'sbp_pagespeed_mode' => true,
+        'sbp_local_cdn_enabled' => true,
+        'sbp_local_cdn_aggressive' => false,
+        
+        // Nuevas configuraciones granulares
+        'sbp_optimize_images' => true,
+        'sbp_optimize_css' => true,
+        'sbp_optimize_js' => false, // Deshabilitado por defecto
+        'sbp_optimize_fonts' => true,
+        'sbp_lazy_loading' => true,
+        'sbp_webp_conversion' => true,
+        'sbp_critical_css' => true,
+        'sbp_preload_resources' => true,
+        'sbp_minify_html' => true,
+        'sbp_remove_query_strings' => true
+    );
     
-    // Programar tareas de optimización
+    foreach ($default_options as $option => $value) {
+        add_option($option, $value);
+    }
+    
+    // Programar tareas de optimización (solo las necesarias)
     if (!wp_next_scheduled('sbp_boostai_analysis')) {
         wp_schedule_event(time(), 'hourly', 'sbp_boostai_analysis');
     }

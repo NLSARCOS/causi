@@ -24,6 +24,29 @@ class SBP_Admin {
         add_action('wp_ajax_sbp_resume_optimization', array($this, 'ajax_resume_optimization'));
         add_action('wp_ajax_sbp_stop_optimization', array($this, 'ajax_stop_optimization'));
         add_action('wp_ajax_sbp_get_optimization_status', array($this, 'ajax_get_optimization_status'));
+        
+        // Hook para limpiar caché cuando se guardan configuraciones
+        add_action('update_option', array($this, 'clear_cache_on_config_change'), 10, 3);
+    }
+    
+    /**
+     * Limpiar caché cuando cambia configuración (SIN desactivar plugin)
+     */
+    public function clear_cache_on_config_change($option_name, $old_value, $new_value) {
+        // Solo limpiar caché para opciones del plugin
+        if (strpos($option_name, 'sbp_') === 0) {
+            // Limpiar caché solo si el valor realmente cambió
+            if ($old_value !== $new_value) {
+                sbp_clear_all_cache();
+                
+                // Mostrar mensaje de éxito
+                add_action('admin_notices', function() {
+                    echo '<div class="notice notice-success is-dismissible">';
+                    echo '<p><strong>StaticBoost Pro:</strong> Configuración guardada y caché limpiado automáticamente.</p>';
+                    echo '</div>';
+                });
+            }
+        }
     }
     
     public function add_admin_menu() {
@@ -37,23 +60,30 @@ class SBP_Admin {
     }
     
     public function admin_init() {
+        // Registrar configuraciones básicas
         register_setting('sbp_settings', 'sbp_enabled');
         register_setting('sbp_settings', 'sbp_cache_lifetime');
         register_setting('sbp_settings', 'sbp_excluded_pages');
         register_setting('sbp_settings', 'sbp_excluded_user_agents');
         register_setting('sbp_settings', 'sbp_show_cache_info');
+        
+        // Configuraciones de optimización (SEPARADAS)
         register_setting('sbp_settings', 'sbp_boostai_enabled');
-        register_setting('sbp_settings', 'sbp_asset_optimization');
-        register_setting('sbp_settings', 'sbp_aggressive_optimization');
-        register_setting('sbp_settings', 'sbp_image_optimization');
-        register_setting('sbp_settings', 'sbp_critical_css');
         register_setting('sbp_settings', 'sbp_pagespeed_mode');
-        register_setting('sbp_settings', 'sbp_preload_critical_resources');
-        register_setting('sbp_settings', 'sbp_eliminate_render_blocking');
-        register_setting('sbp_settings', 'sbp_optimize_lcp');
-        register_setting('sbp_settings', 'sbp_minimize_main_thread');
         register_setting('sbp_settings', 'sbp_local_cdn_enabled');
         register_setting('sbp_settings', 'sbp_local_cdn_aggressive');
+        
+        // NUEVAS configuraciones granulares de assets
+        register_setting('sbp_settings', 'sbp_optimize_images');
+        register_setting('sbp_settings', 'sbp_optimize_css');
+        register_setting('sbp_settings', 'sbp_optimize_js');
+        register_setting('sbp_settings', 'sbp_optimize_fonts');
+        register_setting('sbp_settings', 'sbp_lazy_loading');
+        register_setting('sbp_settings', 'sbp_webp_conversion');
+        register_setting('sbp_settings', 'sbp_critical_css');
+        register_setting('sbp_settings', 'sbp_preload_resources');
+        register_setting('sbp_settings', 'sbp_minify_html');
+        register_setting('sbp_settings', 'sbp_remove_query_strings');
     }
     
     public function admin_page() {
@@ -61,8 +91,6 @@ class SBP_Admin {
         $total_pages = sbp_get_total_pages_count();
         $enabled = get_option('sbp_enabled', true);
         $boostai_enabled = get_option('sbp_boostai_enabled', true);
-        $asset_optimization = get_option('sbp_asset_optimization', true);
-        $aggressive_optimization = get_option('sbp_aggressive_optimization', false);
         $pagespeed_mode = get_option('sbp_pagespeed_mode', true);
         $local_cdn_enabled = get_option('sbp_local_cdn_enabled', true);
         $progress_percent = $total_pages['total'] > 0 ? round(($stats['files'] / $total_pages['total']) * 100, 1) : 0;
@@ -169,72 +197,12 @@ class SBP_Admin {
                         <?php settings_fields('sbp_settings'); ?>
                         
                         <table class="form-table">
+                            <!-- CONFIGURACIÓN BÁSICA -->
                             <tr>
-                                <th scope="row">🌐 CDN Local Ultra</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_local_cdn_enabled" value="1" <?php checked(get_option('sbp_local_cdn_enabled', true)); ?> />
-                                    <label><strong>Activar CDN Local (RECOMENDADO)</strong></label>
-                                    <p class="description">Servir assets optimizados desde el servidor local con headers de CDN profesional</p>
-                                    
-                                    <br><br>
-                                    <input type="checkbox" name="sbp_local_cdn_aggressive" value="1" <?php checked(get_option('sbp_local_cdn_aggressive', false)); ?> />
-                                    <label><strong>Modo CDN Agresivo</strong></label>
-                                    <p class="description">Optimizaciones avanzadas: Brotli, HTTP/2 Push, Edge Caching</p>
-                                </td>
+                                <th colspan="2"><h3 style="margin: 0; color: #0073aa;">🔧 Configuración Básica</h3></th>
                             </tr>
                             <tr>
-                                <th scope="row">🚀 Modo PageSpeed 100/100</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_pagespeed_mode" value="1" <?php checked(get_option('sbp_pagespeed_mode', true)); ?> />
-                                    <label><strong>Activar optimizaciones para PageSpeed Insights</strong></label>
-                                    <p class="description">Optimizaciones específicas para obtener 100/100 en PageSpeed: CSS crítico inline, preload headers, eliminación de render-blocking</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">🧠 BoostAI™ Optimizer</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_boostai_enabled" value="1" <?php checked(get_option('sbp_boostai_enabled', true)); ?> />
-                                    <label>Activar optimización inteligente con BoostAI™</label>
-                                    <p class="description">Nuestro sistema de Machine Learning propietario que optimiza la carga de contenido basado en el comportamiento del usuario</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">Optimización de Assets</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_asset_optimization" value="1" <?php checked(get_option('sbp_asset_optimization', true)); ?> />
-                                    <label>Activar optimización básica de assets (RECOMENDADO)</label>
-                                    <p class="description">Optimizaciones seguras: lazy loading inteligente, preload headers, compresión de imágenes</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">⚠️ Optimización Agresiva</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_aggressive_optimization" value="1" <?php checked(get_option('sbp_aggressive_optimization', false)); ?> />
-                                    <label><strong>Activar optimización agresiva (EXPERIMENTAL)</strong></label>
-                                    <p class="description" style="color: #d63638;">
-                                        <strong>ADVERTENCIA:</strong> Puede romper el diseño del sitio. Solo activar si sabes lo que haces.<br>
-                                        Incluye: minificación y combinación de CSS/JS, modificación de assets del tema.
-                                    </p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">Optimización de Imágenes</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_image_optimization" value="1" <?php checked(get_option('sbp_image_optimization', true)); ?> />
-                                    <label>Generar formatos WebP automáticamente</label>
-                                    <p class="description">Convierte imágenes a formato WebP para mejor compresión (solo imágenes de uploads)</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">CSS Crítico</th>
-                                <td>
-                                    <input type="checkbox" name="sbp_critical_css" value="1" <?php checked(get_option('sbp_critical_css', true)); ?> />
-                                    <label>Generar CSS crítico para PageSpeed</label>
-                                    <p class="description">CSS crítico optimizado para eliminar render-blocking y mejorar LCP</p>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th scope="row">Tiempo de Vida</th>
+                                <th scope="row">Tiempo de Vida del Caché</th>
                                 <td>
                                     <input type="number" name="sbp_cache_lifetime" value="<?php echo get_option('sbp_cache_lifetime', 3600); ?>" min="60" step="60" />
                                     <p class="description">Segundos antes de que expire el archivo estático (3600 = 1 hora)</p>
@@ -261,9 +229,136 @@ class SBP_Admin {
                                     <label>Mostrar información en comentarios HTML</label>
                                 </td>
                             </tr>
+                            
+                            <!-- CDN LOCAL -->
+                            <tr>
+                                <th colspan="2"><h3 style="margin: 20px 0 0 0; color: #0073aa;">🌐 CDN Local Ultra</h3></th>
+                            </tr>
+                            <tr>
+                                <th scope="row">CDN Local</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_local_cdn_enabled" value="1" <?php checked(get_option('sbp_local_cdn_enabled', true)); ?> />
+                                    <label><strong>Activar CDN Local (RECOMENDADO)</strong></label>
+                                    <p class="description">Servir assets optimizados desde el servidor local con headers de CDN profesional</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Modo CDN Agresivo</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_local_cdn_aggressive" value="1" <?php checked(get_option('sbp_local_cdn_aggressive', false)); ?> />
+                                    <label><strong>Activar optimizaciones avanzadas</strong></label>
+                                    <p class="description">Brotli, HTTP/2 Push, Edge Caching, optimización extrema</p>
+                                </td>
+                            </tr>
+                            
+                            <!-- OPTIMIZACIÓN DE ASSETS (GRANULAR) -->
+                            <tr>
+                                <th colspan="2"><h3 style="margin: 20px 0 0 0; color: #0073aa;">🎯 Optimización de Assets (Granular)</h3></th>
+                            </tr>
+                            <tr>
+                                <th scope="row">Optimización de Imágenes</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_optimize_images" value="1" <?php checked(get_option('sbp_optimize_images', true)); ?> />
+                                    <label>Optimizar y comprimir imágenes</label>
+                                    <p class="description">Compresión inteligente sin pérdida de calidad visible</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Conversión WebP</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_webp_conversion" value="1" <?php checked(get_option('sbp_webp_conversion', true)); ?> />
+                                    <label>Generar versiones WebP automáticamente</label>
+                                    <p class="description">Crear versiones WebP de imágenes para mejor compresión</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Lazy Loading</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_lazy_loading" value="1" <?php checked(get_option('sbp_lazy_loading', true)); ?> />
+                                    <label>Activar lazy loading inteligente</label>
+                                    <p class="description">Cargar imágenes solo cuando son visibles (excluye logos e iconos)</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Optimización de CSS</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_optimize_css" value="1" <?php checked(get_option('sbp_optimize_css', true)); ?> />
+                                    <label>Minificar y optimizar CSS</label>
+                                    <p class="description">Reducir tamaño de archivos CSS sin afectar apariencia</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">CSS Crítico</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_critical_css" value="1" <?php checked(get_option('sbp_critical_css', true)); ?> />
+                                    <label>Generar CSS crítico inline</label>
+                                    <p class="description">CSS crítico para eliminar render-blocking y mejorar LCP</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Optimización de JavaScript</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_optimize_js" value="1" <?php checked(get_option('sbp_optimize_js', false)); ?> />
+                                    <label>Minificar JavaScript</label>
+                                    <p class="description">⚠️ Puede afectar funcionalidad. Probar antes de activar en producción.</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Optimización de Fuentes</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_optimize_fonts" value="1" <?php checked(get_option('sbp_optimize_fonts', true)); ?> />
+                                    <label>Optimizar carga de fuentes</label>
+                                    <p class="description">Preload, font-display: swap, preconnect a Google Fonts</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Preload de Recursos</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_preload_resources" value="1" <?php checked(get_option('sbp_preload_resources', true)); ?> />
+                                    <label>Precargar recursos críticos</label>
+                                    <p class="description">Preload headers para CSS crítico y fuentes importantes</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Minificar HTML</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_minify_html" value="1" <?php checked(get_option('sbp_minify_html', true)); ?> />
+                                    <label>Minificar HTML</label>
+                                    <p class="description">Eliminar espacios en blanco innecesarios del HTML</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Eliminar Query Strings</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_remove_query_strings" value="1" <?php checked(get_option('sbp_remove_query_strings', true)); ?> />
+                                    <label>Eliminar query strings de assets estáticos</label>
+                                    <p class="description">Mejorar caché de CDNs externos eliminando ?ver=1.0 de CSS/JS</p>
+                                </td>
+                            </tr>
+                            
+                            <!-- SISTEMAS INTELIGENTES -->
+                            <tr>
+                                <th colspan="2"><h3 style="margin: 20px 0 0 0; color: #0073aa;">🧠 Sistemas Inteligentes</h3></th>
+                            </tr>
+                            <tr>
+                                <th scope="row">BoostAI™ Optimizer</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_boostai_enabled" value="1" <?php checked(get_option('sbp_boostai_enabled', true)); ?> />
+                                    <label>Activar optimización inteligente con BoostAI™</label>
+                                    <p class="description">Nuestro sistema de Machine Learning propietario que optimiza la carga de contenido basado en el comportamiento del usuario</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Modo PageSpeed 100/100</th>
+                                <td>
+                                    <input type="checkbox" name="sbp_pagespeed_mode" value="1" <?php checked(get_option('sbp_pagespeed_mode', true)); ?> />
+                                    <label><strong>Activar optimizaciones para PageSpeed Insights</strong></label>
+                                    <p class="description">Optimizaciones específicas para obtener 100/100 en PageSpeed: CSS crítico inline, preload headers, eliminación de render-blocking</p>
+                                </td>
+                            </tr>
                         </table>
                         
-                        <?php submit_button('💾 Guardar Configuración'); ?>
+                        <?php submit_button('💾 Guardar Configuración (Caché se limpiará automáticamente)'); ?>
                     </form>
                 </div>
             </div>
@@ -291,16 +386,6 @@ class SBP_Admin {
                         ?>
                     </div>
                     <div class="sbp-info-item">
-                        <strong>Optimización de Assets:</strong> 
-                        <?php 
-                        if ($asset_optimization) {
-                            echo $aggressive_optimization ? '⚠️ Modo Agresivo' : '✅ Modo Seguro';
-                        } else {
-                            echo '❌ Deshabilitada';
-                        }
-                        ?>
-                    </div>
-                    <div class="sbp-info-item">
                         <strong>PageSpeed Mode:</strong> 
                         <?php echo $pagespeed_mode ? '🚀 Activo (100/100)' : '❌ Deshabilitado'; ?>
                     </div>
@@ -308,13 +393,21 @@ class SBP_Admin {
                         <strong>Última conversión:</strong> 
                         <?php echo $stats['last_generated'] ? $stats['last_generated'] : 'Nunca'; ?>
                     </div>
+                    <div class="sbp-info-item">
+                        <strong>Optimizaciones Activas:</strong> 
+                        <?php 
+                        $active_optimizations = array();
+                        if (get_option('sbp_optimize_images', true)) $active_optimizations[] = 'Imágenes';
+                        if (get_option('sbp_webp_conversion', true)) $active_optimizations[] = 'WebP';
+                        if (get_option('sbp_lazy_loading', true)) $active_optimizations[] = 'Lazy Loading';
+                        if (get_option('sbp_optimize_css', true)) $active_optimizations[] = 'CSS';
+                        if (get_option('sbp_optimize_js', false)) $active_optimizations[] = 'JS';
+                        if (get_option('sbp_optimize_fonts', true)) $active_optimizations[] = 'Fuentes';
+                        
+                        echo !empty($active_optimizations) ? implode(', ', $active_optimizations) : 'Ninguna';
+                        ?>
+                    </div>
                 </div>
-                
-                <?php if ($aggressive_optimization): ?>
-                <div class="sbp-warning">
-                    <p><strong>⚠️ ADVERTENCIA:</strong> El modo agresivo está activado. Si experimentas problemas visuales, desactívalo.</p>
-                </div>
-                <?php endif; ?>
             </div>
         </div>
         
@@ -937,16 +1030,6 @@ class SBP_Admin {
             border: 1px solid #dee2e6;
         }
         
-        /* Warning */
-        .sbp-warning {
-            margin-top: 20px;
-            padding: 15px;
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 6px;
-            color: #856404;
-        }
-        
         /* Responsive */
         @media (max-width: 768px) {
             .sbp-header-controls {
@@ -1132,11 +1215,8 @@ class SBP_Admin {
             // Ejecutar optimización de PageSpeed
             sbp_run_pagespeed_optimization();
             
-            $mode = get_option('sbp_aggressive_optimization', false) ? 'agresivo' : 'seguro';
-            $pagespeed = get_option('sbp_pagespeed_mode', true) ? ' + PageSpeed 100/100' : '';
-            
             wp_send_json_success(array(
-                'message' => "Optimización completada (modo {$mode}{$pagespeed})"
+                'message' => "Optimización de assets completada exitosamente"
             ));
         } catch (Exception $e) {
             wp_send_json_error('Error durante la optimización: ' . $e->getMessage());
