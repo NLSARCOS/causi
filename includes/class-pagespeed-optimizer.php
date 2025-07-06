@@ -1,42 +1,39 @@
 <?php
 /**
- * Optimizador específico para PageSpeed Insights 100/100
+ * Optimizador PageSpeed 100/100 - VERSIÓN CONSERVADORA
+ * Optimiza para PageSpeed SIN romper el diseño
  */
 class SBP_PageSpeed_Optimizer {
     
     public function __construct() {
-        add_action('sbp_pagespeed_optimization', array($this, 'optimize_for_pagespeed'));
-        add_filter('sbp_static_html', array($this, 'optimize_html_for_pagespeed'), 5, 2);
+        add_action('sbp_pagespeed_optimization', array($this, 'optimize_for_pagespeed_safely'));
+        add_filter('sbp_static_html', array($this, 'optimize_html_for_pagespeed_safely'), 5, 2);
         add_action('wp_head', array($this, 'add_critical_performance_headers'), 1);
-        add_action('wp_enqueue_scripts', array($this, 'optimize_scripts_for_pagespeed'), 1);
     }
     
     /**
-     * Optimización completa para PageSpeed 100/100
+     * Optimización PageSpeed SEGURA
      */
-    public function optimize_for_pagespeed() {
+    public function optimize_for_pagespeed_safely() {
         if (!get_option('sbp_pagespeed_mode', true)) {
             return;
         }
         
-        // 1. Generar CSS crítico optimizado
-        $this->generate_critical_css_for_pagespeed();
+        // 1. Generar CSS crítico para PageSpeed (sin tocar archivos existentes)
+        $this->generate_pagespeed_critical_css();
         
-        // 2. Optimizar fuentes para LCP
-        $this->optimize_fonts_for_lcp();
+        // 2. Crear headers de preload optimizados
+        $this->create_preload_manifest();
         
-        // 3. Crear recursos preload críticos
-        $this->create_preload_resources();
-        
-        // 4. Optimizar imágenes para CLS
-        $this->optimize_images_for_cls();
+        // 3. Optimizar configuración del servidor
+        $this->update_htaccess_for_pagespeed();
     }
     
     /**
      * Generar CSS crítico específico para PageSpeed
      */
-    private function generate_critical_css_for_pagespeed() {
-        $critical_css_file = SBP_CACHE_DIR . 'css/critical-pagespeed.css';
+    private function generate_pagespeed_critical_css() {
+        $critical_css_file = SBP_CACHE_DIR . 'css/pagespeed-critical.css';
         
         if (!file_exists(dirname($critical_css_file))) {
             wp_mkdir_p(dirname($critical_css_file));
@@ -44,73 +41,43 @@ class SBP_PageSpeed_Optimizer {
         
         // CSS crítico optimizado para Core Web Vitals
         $critical_css = '
-        /* Critical CSS for PageSpeed 100/100 */
+        /* StaticBoost Pro - PageSpeed Critical CSS */
+        
+        /* Prevent layout shift */
         * { box-sizing: border-box; }
         html { -webkit-text-size-adjust: 100%; }
         body { 
             margin: 0; 
             padding: 0; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             line-height: 1.6;
-            font-display: swap;
         }
         
-        /* Prevent layout shift */
+        /* Responsive media */
         img, video, iframe { 
             max-width: 100%; 
             height: auto; 
             display: block;
         }
         
-        /* Critical above-the-fold styles */
-        .header, .navigation, .hero, .main-content { 
-            display: block; 
-        }
-        
-        /* Lazy loading optimization */
-        .sbp-loaded { 
-            opacity: 1 !important; 
-            transition: opacity 0.2s ease-in-out; 
-        }
-        
-        img[data-src] { 
-            opacity: 0; 
-            transition: opacity 0.2s ease-in-out; 
-        }
-        
-        img[data-src].sbp-loaded { 
-            opacity: 1; 
-        }
-        
-        /* Prevent CLS for common elements */
-        .wp-block-image, .aligncenter, .alignleft, .alignright {
-            margin: 0.5em 0;
-        }
-        
         /* Font loading optimization */
-        @font-face {
-            font-display: swap;
-        }
+        @font-face { font-display: swap; }
         
-        /* Hide non-critical elements initially */
-        .hidden { 
-            display: none !important; 
-        }
+        /* Lazy loading states */
+        .sbp-lazy { opacity: 0; transition: opacity 0.2s ease; }
+        .sbp-lazy.sbp-loaded { opacity: 1; }
+        
+        /* Prevent CLS for WordPress blocks */
+        .wp-block-image, .wp-block-gallery { margin: 1em 0; }
+        .aligncenter { text-align: center; margin: 1em auto; }
+        .alignleft { float: left; margin: 0 1em 1em 0; }
+        .alignright { float: right; margin: 0 0 1em 1em; }
         
         /* Loading states */
-        .loading { 
-            opacity: 0.7; 
-            pointer-events: none; 
-        }
-        
-        /* Responsive images */
-        .responsive-img {
-            width: 100%;
-            height: auto;
-        }
+        .sbp-loading { opacity: 0.8; pointer-events: none; }
         ';
         
-        // Minificar CSS crítico
+        // Minificar agresivamente para PageSpeed
         $critical_css = $this->minify_css_aggressive($critical_css);
         
         file_put_contents($critical_css_file, $critical_css);
@@ -122,87 +89,155 @@ class SBP_PageSpeed_Optimizer {
     }
     
     /**
-     * Optimizar fuentes para LCP
+     * Crear manifest de preload
      */
-    private function optimize_fonts_for_lcp() {
-        $fonts_dir = SBP_CACHE_DIR . 'fonts/';
-        
-        if (!file_exists($fonts_dir)) {
-            wp_mkdir_p($fonts_dir);
-        }
-        
-        // Crear CSS de fuentes optimizado
-        $font_css = '
-        /* Optimized font loading for LCP */
-        @font-face {
-            font-family: "System Font";
-            src: local(-apple-system), local(BlinkMacSystemFont), local("Segoe UI"), local(Roboto);
-            font-display: swap;
-        }
-        ';
-        
-        file_put_contents($fonts_dir . 'optimized-fonts.css', $this->minify_css_aggressive($font_css));
-    }
-    
-    /**
-     * Crear recursos preload críticos
-     */
-    private function create_preload_resources() {
+    private function create_preload_manifest() {
         $preload_file = SBP_CACHE_DIR . 'preload-manifest.json';
         
         $preload_resources = array(
-            'critical_css' => content_url('cache/staticboost-pro/css/critical-pagespeed.css'),
-            'fonts' => array(
+            'critical_css' => content_url('cache/staticboost-pro/css/pagespeed-critical.css'),
+            'preconnect' => array(
+                'https://fonts.googleapis.com',
                 'https://fonts.gstatic.com'
             ),
             'dns_prefetch' => array(
-                'https://fonts.googleapis.com',
-                'https://fonts.gstatic.com'
+                '//fonts.googleapis.com',
+                '//fonts.gstatic.com'
             )
         );
         
-        file_put_contents($preload_file, json_encode($preload_resources));
+        file_put_contents($preload_file, json_encode($preload_resources, JSON_PRETTY_PRINT));
     }
     
     /**
-     * Optimizar HTML para PageSpeed 100/100
+     * Actualizar .htaccess para PageSpeed máximo
      */
-    public function optimize_html_for_pagespeed($html, $url) {
+    private function update_htaccess_for_pagespeed() {
+        $htaccess_content = '
+# StaticBoost Pro - PageSpeed 100/100 Optimization
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# Servir archivos estáticos HTML directamente
+RewriteCond %{REQUEST_METHOD} GET
+RewriteCond %{QUERY_STRING} ^$
+RewriteCond %{HTTP_COOKIE} !comment_author_
+RewriteCond %{HTTP_COOKIE} !wp-postpass_
+RewriteCond %{HTTP_COOKIE} !wordpress_logged_in_
+RewriteCond %{HTTP_COOKIE} !woocommerce_cart_hash
+RewriteCond %{HTTP_COOKIE} !woocommerce_items_in_cart
+RewriteCond %{REQUEST_URI} !^/wp-admin/
+RewriteCond %{REQUEST_URI} !^/wp-content/
+RewriteCond %{REQUEST_URI} !^/wp-includes/
+RewriteCond %{REQUEST_URI} !^/cart/
+RewriteCond %{REQUEST_URI} !^/checkout/
+RewriteCond %{REQUEST_URI} !^/my-account/
+
+# Para página principal
+RewriteCond %{REQUEST_URI} ^/$
+RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/staticboost-pro/index/index.html -f
+RewriteRule ^$ wp-content/cache/staticboost-pro/index/index.html [L]
+
+# Para otras páginas
+RewriteCond %{REQUEST_URI} !^/$
+RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/staticboost-pro%{REQUEST_URI}/index.html -f
+RewriteRule ^(.*)$ wp-content/cache/staticboost-pro/$1/index.html [L]
+</IfModule>
+
+# Headers para PageSpeed 100/100
+<IfModule mod_expires.c>
+ExpiresActive On
+ExpiresByType text/html "access plus 1 hour"
+ExpiresByType text/css "access plus 1 year"
+ExpiresByType application/javascript "access plus 1 year"
+ExpiresByType image/png "access plus 1 year"
+ExpiresByType image/jpg "access plus 1 year"
+ExpiresByType image/jpeg "access plus 1 year"
+ExpiresByType image/gif "access plus 1 year"
+ExpiresByType image/webp "access plus 1 year"
+ExpiresByType image/avif "access plus 1 year"
+ExpiresByType font/woff "access plus 1 year"
+ExpiresByType font/woff2 "access plus 1 year"
+ExpiresByType image/svg+xml "access plus 1 year"
+</IfModule>
+
+# Compresión máxima
+<IfModule mod_deflate.c>
+AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json image/svg+xml text/xml application/xml application/rss+xml
+SetOutputFilter DEFLATE
+SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png|webp|avif)$ no-gzip dont-vary
+SetEnvIfNoCase Request_URI \.(?:exe|t?gz|zip|bz2|sit|rar)$ no-gzip dont-vary
+</IfModule>
+
+# Brotli compression (si está disponible)
+<IfModule mod_brotli.c>
+AddOutputFilterByType BROTLI_COMPRESS text/html text/css text/javascript application/javascript application/json image/svg+xml
+</IfModule>
+
+# Headers de caché optimizados
+<IfModule mod_headers.c>
+Header set X-Static-Cache "HIT"
+Header set X-StaticBoost "PRO"
+Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{REQUEST_URI} =~ m#\.(css|js|png|jpg|jpeg|gif|webp|avif|woff|woff2|svg)$#"
+Header set Cache-Control "public, max-age=3600" "expr=%{REQUEST_URI} =~ m#\.html$#"
+
+# Preload headers críticos
+Header add Link "</wp-content/cache/staticboost-pro/css/pagespeed-critical.css>; rel=preload; as=style"
+Header add Link "<https://fonts.googleapis.com>; rel=preconnect"
+Header add Link "<https://fonts.gstatic.com>; rel=preconnect; crossorigin"
+
+# Security headers
+Header always set X-Content-Type-Options nosniff
+Header always set X-Frame-Options DENY
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Optimización de fuentes
+<IfModule mod_headers.c>
+<FilesMatch "\.(woff|woff2|eot|ttf)$">
+Header set Cache-Control "public, max-age=31536000, immutable"
+Header set Access-Control-Allow-Origin "*"
+</FilesMatch>
+</IfModule>
+';
+        
+        file_put_contents(SBP_CACHE_DIR . '.htaccess', $htaccess_content);
+    }
+    
+    /**
+     * Optimizar HTML para PageSpeed SEGURAMENTE
+     */
+    public function optimize_html_for_pagespeed_safely($html, $url) {
         if (!get_option('sbp_pagespeed_mode', true)) {
             return $html;
         }
         
-        // 1. Inline CSS crítico para eliminar render-blocking
-        $html = $this->inline_critical_css($html);
+        // 1. Inline CSS crítico (sin tocar CSS existente)
+        $html = $this->inline_critical_css_safely($html);
         
-        // 2. Optimizar scripts para mejor FID
-        $html = $this->optimize_scripts_for_fid($html);
+        // 2. Añadir preload headers críticos
+        $html = $this->add_critical_preload_headers_safely($html);
         
-        // 3. Añadir preload headers críticos
-        $html = $this->add_critical_preload_headers($html);
+        // 3. Optimizar scripts para FID (sin romper funcionalidad)
+        $html = $this->optimize_scripts_for_fid_safely($html);
         
-        // 4. Optimizar imágenes para CLS
-        $html = $this->optimize_images_for_pagespeed($html);
-        
-        // 5. Añadir meta tags de rendimiento
+        // 4. Añadir meta tags de rendimiento
         $html = $this->add_performance_meta_tags($html);
-        
-        // 6. Eliminar recursos no críticos
-        $html = $this->remove_non_critical_resources($html);
         
         return $html;
     }
     
     /**
-     * Inline CSS crítico para eliminar render-blocking
+     * Inline CSS crítico SEGURAMENTE
      */
-    private function inline_critical_css($html) {
-        $critical_css_file = SBP_CACHE_DIR . 'css/critical-pagespeed.css';
+    private function inline_critical_css_safely($html) {
+        $critical_css_file = SBP_CACHE_DIR . 'css/pagespeed-critical.css';
         
         if (file_exists($critical_css_file)) {
             $critical_css = file_get_contents($critical_css_file);
             
-            $inline_css = '<style id="sbp-critical-css">' . $critical_css . '</style>';
+            // Solo añadir, NO reemplazar CSS existente
+            $inline_css = '<style id="sbp-pagespeed-critical">' . $critical_css . '</style>';
             $html = str_replace('</head>', $inline_css . "\n</head>", $html);
         }
         
@@ -210,100 +245,44 @@ class SBP_PageSpeed_Optimizer {
     }
     
     /**
-     * Optimizar scripts para mejor FID
+     * Añadir preload headers SEGURAMENTE
      */
-    private function optimize_scripts_for_fid($html) {
-        // Diferir todos los scripts no críticos
-        $html = preg_replace_callback(
-            '/<script([^>]*?)src=([^>]*?)><\/script>/i',
-            function($matches) {
-                $attributes = $matches[1];
-                $src = $matches[2];
-                
-                // No diferir scripts críticos
-                if (strpos($src, 'jquery') !== false || 
-                    strpos($attributes, 'defer') !== false || 
-                    strpos($attributes, 'async') !== false) {
-                    return $matches[0];
-                }
-                
-                return '<script' . $attributes . ' defer src=' . $src . '></script>';
-            },
-            $html
-        );
-        
-        return $html;
-    }
-    
-    /**
-     * Añadir preload headers críticos
-     */
-    private function add_critical_preload_headers($html) {
+    private function add_critical_preload_headers_safely($html) {
         $preload_headers = '';
-        
-        // Preload CSS crítico
-        $preload_headers .= '<link rel="preload" href="' . content_url('cache/staticboost-pro/css/critical-pagespeed.css') . '" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">' . "\n";
         
         // Preconnect a dominios críticos
         $preload_headers .= '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n";
         $preload_headers .= '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
         
-        // DNS prefetch para recursos externos
+        // DNS prefetch
         $preload_headers .= '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
         $preload_headers .= '<link rel="dns-prefetch" href="//fonts.gstatic.com">' . "\n";
         
-        // Insertar después del <head>
+        // Insertar al inicio del head
         $html = preg_replace('/<head([^>]*)>/i', '<head$1>' . "\n" . $preload_headers, $html);
         
         return $html;
     }
     
     /**
-     * Optimizar imágenes para PageSpeed
+     * Optimizar scripts para FID SEGURAMENTE
      */
-    private function optimize_images_for_pagespeed($html) {
-        // Añadir dimensiones a imágenes para prevenir CLS
-        $html = preg_replace_callback(
-            '/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i',
-            array($this, 'optimize_img_tag_for_pagespeed'),
-            $html
+    private function optimize_scripts_for_fid_safely($html) {
+        // Solo diferir scripts NO críticos
+        $safe_to_defer = array(
+            'wp-embed',
+            'comment-reply'
         );
         
+        foreach ($safe_to_defer as $script_handle) {
+            $html = preg_replace(
+                '/<script([^>]*?)id=["\']' . $script_handle . '-js["\']([^>]*?)>/i',
+                '<script$1id="' . $script_handle . '-js"$2 defer>',
+                $html
+            );
+        }
+        
         return $html;
-    }
-    
-    /**
-     * Optimizar tag de imagen para PageSpeed
-     */
-    private function optimize_img_tag_for_pagespeed($matches) {
-        $before_src = $matches[1];
-        $src = $matches[2];
-        $after_src = $matches[3];
-        $full_tag = $matches[0];
-        
-        // No optimizar logos e iconos críticos
-        if (stripos($full_tag, 'logo') !== false ||
-            stripos($full_tag, 'icon') !== false ||
-            stripos($src, 'logo') !== false ||
-            stripos($src, 'icon') !== false) {
-            return $matches[0];
-        }
-        
-        // Añadir loading="lazy" y dimensiones si no existen
-        $optimized_attributes = $before_src . $after_src;
-        
-        if (strpos($optimized_attributes, 'loading=') === false) {
-            $optimized_attributes .= ' loading="lazy"';
-        }
-        
-        if (strpos($optimized_attributes, 'decoding=') === false) {
-            $optimized_attributes .= ' decoding="async"';
-        }
-        
-        // Convertir a lazy loading con placeholder
-        $placeholder = 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 1 1\'%3E%3C/svg%3E';
-        
-        return '<img' . $optimized_attributes . ' data-src="' . $src . '" src="' . $placeholder . '" class="sbp-lazy">';
     }
     
     /**
@@ -315,31 +294,9 @@ class SBP_PageSpeed_Optimizer {
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <meta name="theme-color" content="#ffffff">
-        <meta name="format-detection" content="telephone=no">
         ';
         
         $html = str_replace('</head>', $performance_meta . '</head>', $html);
-        
-        return $html;
-    }
-    
-    /**
-     * Eliminar recursos no críticos
-     */
-    private function remove_non_critical_resources($html) {
-        // Eliminar CSS no críticos
-        $non_critical_css = array(
-            'wp-block-library-theme',
-            'classic-theme-styles',
-            'global-styles'
-        );
-        
-        foreach ($non_critical_css as $handle) {
-            $html = preg_replace('/<link[^>]*id=["\']' . $handle . '-css["\'][^>]*>/i', '', $html);
-        }
-        
-        // Eliminar scripts no críticos del head
-        $html = preg_replace('/<script[^>]*wp-embed[^>]*><\/script>/i', '', $html);
         
         return $html;
     }
@@ -352,56 +309,15 @@ class SBP_PageSpeed_Optimizer {
             return;
         }
         
-        // Resource hints críticos
-        echo '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n";
-        echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
-        echo '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
-        echo '<link rel="dns-prefetch" href="//fonts.gstatic.com">' . "\n";
-    }
-    
-    /**
-     * Optimizar scripts para PageSpeed
-     */
-    public function optimize_scripts_for_pagespeed() {
-        if (!get_option('sbp_pagespeed_mode', true) || is_admin()) {
-            return;
+        // Solo añadir si no están ya presentes
+        if (!wp_style_is('sbp-critical', 'done')) {
+            echo '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n";
+            echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
         }
-        
-        // Diferir scripts no críticos
-        add_filter('script_loader_tag', array($this, 'defer_non_critical_scripts_pagespeed'), 10, 2);
-        
-        // Optimizar carga de CSS
-        add_filter('style_loader_tag', array($this, 'optimize_css_loading_pagespeed'), 10, 2);
     }
     
     /**
-     * Diferir scripts no críticos para PageSpeed
-     */
-    public function defer_non_critical_scripts_pagespeed($tag, $handle) {
-        $critical_scripts = array('jquery', 'jquery-core', 'jquery-migrate');
-        
-        if (!in_array($handle, $critical_scripts) && strpos($tag, 'defer') === false && strpos($tag, 'async') === false) {
-            return str_replace('<script ', '<script defer ', $tag);
-        }
-        
-        return $tag;
-    }
-    
-    /**
-     * Optimizar carga de CSS para PageSpeed
-     */
-    public function optimize_css_loading_pagespeed($tag, $handle) {
-        $non_critical_css = array('dashicons', 'admin-bar', 'wp-block-library-theme');
-        
-        if (in_array($handle, $non_critical_css)) {
-            return str_replace("rel='stylesheet'", "rel='preload' as='style' onload=\"this.onload=null;this.rel='stylesheet'\"", $tag);
-        }
-        
-        return $tag;
-    }
-    
-    /**
-     * Minificación agresiva de CSS
+     * Minificación agresiva de CSS para PageSpeed
      */
     private function minify_css_aggressive($css) {
         // Eliminar comentarios
@@ -410,9 +326,12 @@ class SBP_PageSpeed_Optimizer {
         // Eliminar espacios en blanco
         $css = str_replace(array("\r\n", "\r", "\n", "\t", '  ', '    '), '', $css);
         
-        // Optimizar selectores
+        // Optimizar selectores y propiedades
         $css = str_replace(array('; ', ' ;', ' {', '{ ', ' }', '} ', ': ', ' :', ', ', ' ,'), 
                           array(';', ';', '{', '{', '}', '}', ':', ':', ',', ','), $css);
+        
+        // Eliminar último punto y coma antes de }
+        $css = str_replace(';}', '}', $css);
         
         return trim($css);
     }

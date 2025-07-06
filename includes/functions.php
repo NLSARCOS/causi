@@ -1,23 +1,23 @@
 <?php
 /**
- * Funciones auxiliares para Fast Static Cache Pro
+ * Funciones auxiliares para StaticBoost Pro - VERSIÓN CONSERVADORA
  */
 
 /**
  * Limpiar todos los archivos estáticos
  */
-function fsc_clear_all_cache() {
-    if (!is_dir(FSC_CACHE_DIR)) {
+function sbp_clear_all_cache() {
+    if (!is_dir(SBP_CACHE_DIR)) {
         return true;
     }
     
-    return fsc_delete_directory_contents(FSC_CACHE_DIR);
+    return sbp_delete_directory_contents(SBP_CACHE_DIR);
 }
 
 /**
  * Eliminar contenido de directorio recursivamente
  */
-function fsc_delete_directory_contents($dir) {
+function sbp_delete_directory_contents($dir) {
     if (!is_dir($dir)) {
         return false;
     }
@@ -27,7 +27,7 @@ function fsc_delete_directory_contents($dir) {
     foreach ($files as $file) {
         $path = $dir . '/' . $file;
         if (is_dir($path)) {
-            fsc_delete_directory($path);
+            sbp_delete_directory($path);
         } else {
             unlink($path);
         }
@@ -39,7 +39,7 @@ function fsc_delete_directory_contents($dir) {
 /**
  * Eliminar directorio recursivamente
  */
-function fsc_delete_directory($dir) {
+function sbp_delete_directory($dir) {
     if (!is_dir($dir)) {
         return false;
     }
@@ -49,7 +49,7 @@ function fsc_delete_directory($dir) {
     foreach ($files as $file) {
         $path = $dir . '/' . $file;
         if (is_dir($path)) {
-            fsc_delete_directory($path);
+            sbp_delete_directory($path);
         } else {
             unlink($path);
         }
@@ -59,9 +59,9 @@ function fsc_delete_directory($dir) {
 }
 
 /**
- * GENERAR ARCHIVOS ESTÁTICOS PARA TODAS LAS PÁGINAS DEL SITIO
+ * GENERAR ARCHIVOS ESTÁTICOS - VERSIÓN MEJORADA Y CONSERVADORA
  */
-function fsc_generate_all_static_pages() {
+function sbp_generate_all_static_pages() {
     // Aumentar límites para procesamiento masivo
     set_time_limit(0);
     ini_set('memory_limit', '1024M');
@@ -73,16 +73,16 @@ function fsc_generate_all_static_pages() {
         'urls' => array()
     );
     
-    $urls = fsc_get_all_site_urls();
+    $urls = sbp_get_all_site_urls();
     $results['total'] = count($urls);
     
-    // Procesar en lotes para evitar timeouts
-    $batch_size = 50;
+    // Procesar en lotes más pequeños para evitar timeouts
+    $batch_size = 25; // Reducido para mayor estabilidad
     $batches = array_chunk($urls, $batch_size);
     
     foreach ($batches as $batch_index => $batch) {
         foreach ($batch as $url) {
-            $success = fsc_generate_static_file_for_url($url);
+            $success = sbp_generate_static_file_for_url($url);
             
             if ($success) {
                 $results['success']++;
@@ -95,13 +95,13 @@ function fsc_generate_all_static_pages() {
                 'success' => $success
             );
             
-            // Pausa pequeña entre requests
-            usleep(50000); // 0.05 segundos
+            // Pausa entre requests para no sobrecargar
+            usleep(100000); // 0.1 segundos
         }
         
         // Pausa más larga entre lotes
         if ($batch_index < count($batches) - 1) {
-            sleep(1);
+            sleep(2); // 2 segundos entre lotes
         }
     }
     
@@ -109,9 +109,9 @@ function fsc_generate_all_static_pages() {
 }
 
 /**
- * Obtener todas las URLs del sitio
+ * Obtener todas las URLs del sitio - VERSIÓN CONSERVADORA
  */
-function fsc_get_all_site_urls() {
+function sbp_get_all_site_urls() {
     global $wpdb;
     
     $urls = array();
@@ -119,44 +119,46 @@ function fsc_get_all_site_urls() {
     // 1. PÁGINA PRINCIPAL
     $urls[] = home_url();
     
-    // 2. TODAS LAS PÁGINAS PUBLICADAS
+    // 2. PÁGINAS PUBLICADAS (limitadas para evitar timeouts)
     $pages = $wpdb->get_results("
         SELECT ID FROM {$wpdb->posts} 
         WHERE post_type = 'page' 
         AND post_status = 'publish'
-        ORDER BY ID
+        ORDER BY menu_order, post_date DESC
+        LIMIT 100
     ");
     
     foreach ($pages as $page) {
         $permalink = get_permalink($page->ID);
-        if ($permalink && !fsc_is_url_excluded($permalink)) {
+        if ($permalink && !sbp_is_url_excluded($permalink)) {
             $urls[] = $permalink;
         }
     }
     
-    // 3. TODOS LOS POSTS
+    // 3. POSTS RECIENTES (limitados)
     $posts = $wpdb->get_results("
         SELECT ID FROM {$wpdb->posts} 
         WHERE post_type = 'post' 
         AND post_status = 'publish'
-        ORDER BY ID
+        ORDER BY post_date DESC
+        LIMIT 100
     ");
     
     foreach ($posts as $post) {
         $permalink = get_permalink($post->ID);
-        if ($permalink && !fsc_is_url_excluded($permalink)) {
+        if ($permalink && !sbp_is_url_excluded($permalink)) {
             $urls[] = $permalink;
         }
     }
     
-    // 4. CUSTOM POST TYPES
+    // 4. CUSTOM POST TYPES (excluyendo WooCommerce)
     $post_types = get_post_types(array(
         'public' => true,
         '_builtin' => false
     ));
     
     foreach ($post_types as $post_type) {
-        // Excluir productos de WooCommerce si están presentes
+        // Excluir productos de WooCommerce
         if ($post_type === 'product' && class_exists('WooCommerce')) {
             continue;
         }
@@ -165,40 +167,42 @@ function fsc_get_all_site_urls() {
             SELECT ID FROM {$wpdb->posts} 
             WHERE post_type = %s 
             AND post_status = 'publish'
-            ORDER BY ID
+            ORDER BY post_date DESC
+            LIMIT 50
         ", $post_type));
         
         foreach ($custom_posts as $custom_post) {
             $permalink = get_permalink($custom_post->ID);
-            if ($permalink && !fsc_is_url_excluded($permalink)) {
+            if ($permalink && !sbp_is_url_excluded($permalink)) {
                 $urls[] = $permalink;
             }
         }
     }
     
-    // 5. CATEGORÍAS (solo si no es WooCommerce)
+    // 5. CATEGORÍAS Y TAGS (solo si no es WooCommerce)
     if (!class_exists('WooCommerce')) {
+        // Categorías principales
         $categories = get_categories(array(
-            'hide_empty' => false
+            'hide_empty' => true,
+            'number' => 20
         ));
         
         foreach ($categories as $category) {
             $category_link = get_category_link($category->term_id);
-            if ($category_link && !fsc_is_url_excluded($category_link)) {
+            if ($category_link && !sbp_is_url_excluded($category_link)) {
                 $urls[] = $category_link;
             }
         }
-    }
-    
-    // 6. TAGS (solo si no es WooCommerce)
-    if (!class_exists('WooCommerce')) {
+        
+        // Tags principales
         $tags = get_tags(array(
-            'hide_empty' => false
+            'hide_empty' => true,
+            'number' => 20
         ));
         
         foreach ($tags as $tag) {
             $tag_link = get_tag_link($tag->term_id);
-            if ($tag_link && !fsc_is_url_excluded($tag_link)) {
+            if ($tag_link && !sbp_is_url_excluded($tag_link)) {
                 $urls[] = $tag_link;
             }
         }
@@ -213,8 +217,8 @@ function fsc_get_all_site_urls() {
 /**
  * Verificar si una URL debe ser excluida
  */
-function fsc_is_url_excluded($url) {
-    $excluded_pages = get_option('fsc_excluded_pages', array());
+function sbp_is_url_excluded($url) {
+    $excluded_pages = get_option('sbp_excluded_pages', array());
     if (is_string($excluded_pages)) {
         $excluded_pages = explode("\n", $excluded_pages);
     }
@@ -233,49 +237,60 @@ function fsc_is_url_excluded($url) {
 }
 
 /**
- * GENERAR archivo estático para una URL específica
+ * GENERAR archivo estático para una URL específica - CONSERVADOR
  */
-function fsc_generate_static_file_for_url($url) {
-    // Configurar headers para simular visitante anónimo
+function sbp_generate_static_file_for_url($url) {
+    // Headers para simular visitante anónimo
     $headers = array(
-        'User-Agent' => 'FastStaticCache/2.0 (Generator)',
+        'User-Agent' => 'StaticBoost-Pro/2.0 (Generator)',
         'Cache-Control' => 'no-cache',
-        'Pragma' => 'no-cache'
+        'Pragma' => 'no-cache',
+        'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language' => 'en-US,en;q=0.5',
+        'Accept-Encoding' => 'gzip, deflate'
     );
     
-    // Configurar cookies vacías para evitar sesiones
+    // Configurar request
     $args = array(
-        'timeout' => 120,
+        'timeout' => 60, // Reducido para evitar timeouts
         'headers' => $headers,
         'cookies' => array(),
         'sslverify' => false,
-        'user-agent' => 'FastStaticCache/2.0 (Generator)'
+        'user-agent' => 'StaticBoost-Pro/2.0 (Generator)',
+        'redirection' => 5,
+        'blocking' => true
     );
     
     $response = wp_remote_get($url, $args);
     
     if (is_wp_error($response)) {
-        error_log('FSC Error generando ' . $url . ': ' . $response->get_error_message());
+        error_log('SBP Error generando ' . $url . ': ' . $response->get_error_message());
         return false;
     }
     
     $response_code = wp_remote_retrieve_response_code($response);
     if ($response_code !== 200) {
-        error_log('FSC Error HTTP ' . $response_code . ' para ' . $url);
+        error_log('SBP Error HTTP ' . $response_code . ' para ' . $url);
         return false;
     }
     
     $html = wp_remote_retrieve_body($response);
     if (empty($html)) {
-        error_log('FSC HTML vacío para ' . $url);
+        error_log('SBP HTML vacío para ' . $url);
         return false;
     }
     
-    // Optimizar HTML antes de guardar
-    $html = apply_filters('fsc_static_html', $html, $url);
+    // Verificar que sea HTML válido
+    if (strpos($html, '<html') === false && strpos($html, '<!DOCTYPE') === false) {
+        error_log('SBP HTML inválido para ' . $url);
+        return false;
+    }
+    
+    // Optimizar HTML de forma CONSERVADORA
+    $html = apply_filters('sbp_static_html', $html, $url);
     
     // Guardar archivo estático
-    $static_file_path = fsc_get_static_file_path_from_url($url);
+    $static_file_path = sbp_get_static_file_path_from_url($url);
     $static_dir = dirname($static_file_path);
     
     if (!file_exists($static_dir)) {
@@ -299,7 +314,7 @@ function fsc_generate_static_file_for_url($url) {
 /**
  * Obtener ruta del archivo estático desde URL
  */
-function fsc_get_static_file_path_from_url($url) {
+function sbp_get_static_file_path_from_url($url) {
     $parsed_url = parse_url($url);
     $path = $parsed_url['path'] ?? '/';
     $path = rtrim($path, '/');
@@ -308,13 +323,13 @@ function fsc_get_static_file_path_from_url($url) {
         $path = '/index';
     }
     
-    return FSC_CACHE_DIR . ltrim($path, '/') . '/index.html';
+    return SBP_CACHE_DIR . ltrim($path, '/') . '/index.html';
 }
 
 /**
- * PRECARGAR caché de páginas principales
+ * PRECARGAR caché de páginas principales - CONSERVADOR
  */
-function fsc_preload_cache() {
+function sbp_preload_cache() {
     $urls = array();
     
     // Página principal
@@ -323,13 +338,13 @@ function fsc_preload_cache() {
     // Páginas principales (limitado para precarga rápida)
     $pages = get_pages(array(
         'post_status' => 'publish',
-        'number' => 50,
+        'number' => 20, // Reducido
         'sort_column' => 'menu_order'
     ));
     
     foreach ($pages as $page) {
         $permalink = get_permalink($page->ID);
-        if ($permalink && !fsc_is_url_excluded($permalink)) {
+        if ($permalink && !sbp_is_url_excluded($permalink)) {
             $urls[] = $permalink;
         }
     }
@@ -337,43 +352,49 @@ function fsc_preload_cache() {
     // Posts recientes
     $posts = get_posts(array(
         'post_status' => 'publish',
-        'numberposts' => 50,
+        'numberposts' => 20, // Reducido
         'orderby' => 'date',
         'order' => 'DESC'
     ));
     
     foreach ($posts as $post) {
         $permalink = get_permalink($post->ID);
-        if ($permalink && !fsc_is_url_excluded($permalink)) {
+        if ($permalink && !sbp_is_url_excluded($permalink)) {
             $urls[] = $permalink;
         }
     }
     
     // Generar archivos estáticos
+    $success_count = 0;
     foreach ($urls as $url) {
-        fsc_generate_static_file_for_url($url);
+        if (sbp_generate_static_file_for_url($url)) {
+            $success_count++;
+        }
+        
+        // Pausa entre requests
+        usleep(50000); // 0.05 segundos
     }
     
-    return count($urls);
+    return $success_count;
 }
 
 /**
  * Obtener estadísticas de archivos estáticos
  */
-function fsc_get_cache_stats() {
+function sbp_get_cache_stats() {
     $stats = array(
         'files' => 0,
         'size' => 0,
         'last_generated' => null
     );
     
-    if (!is_dir(FSC_CACHE_DIR)) {
+    if (!is_dir(SBP_CACHE_DIR)) {
         return $stats;
     }
     
     try {
         $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator(FSC_CACHE_DIR, RecursiveDirectoryIterator::SKIP_DOTS)
+            new RecursiveDirectoryIterator(SBP_CACHE_DIR, RecursiveDirectoryIterator::SKIP_DOTS)
         );
         
         $latest_time = 0;
@@ -394,7 +415,7 @@ function fsc_get_cache_stats() {
             $stats['last_generated'] = date('Y-m-d H:i:s', $latest_time);
         }
     } catch (Exception $e) {
-        error_log('FSC Error getting stats: ' . $e->getMessage());
+        error_log('SBP Error getting stats: ' . $e->getMessage());
     }
     
     return $stats;
@@ -403,8 +424,8 @@ function fsc_get_cache_stats() {
 /**
  * Limpiar archivo estático de una página específica
  */
-function fsc_clear_static_file_by_url($url) {
-    $static_file_path = fsc_get_static_file_path_from_url($url);
+function sbp_clear_static_file_by_url($url) {
+    $static_file_path = sbp_get_static_file_path_from_url($url);
     
     if (file_exists($static_file_path)) {
         unlink($static_file_path);
@@ -423,7 +444,7 @@ function fsc_clear_static_file_by_url($url) {
 /**
  * Obtener conteo total de páginas en el sitio
  */
-function fsc_get_total_pages_count() {
+function sbp_get_total_pages_count() {
     global $wpdb;
     
     // Contar páginas
@@ -475,33 +496,43 @@ function fsc_get_total_pages_count() {
 }
 
 /**
- * Ejecutar análisis ML
+ * Ejecutar análisis BoostAI
  */
-function fsc_run_ml_analysis() {
-    if (class_exists('FSC_ML_Optimizer')) {
-        $ml_optimizer = new FSC_ML_Optimizer();
-        $ml_optimizer->run_adaptive_analysis();
+function sbp_run_boostai_analysis() {
+    if (class_exists('SBP_BoostAI_Optimizer')) {
+        $boostai_optimizer = new SBP_BoostAI_Optimizer();
+        $boostai_optimizer->run_adaptive_analysis();
     }
 }
 
 /**
- * Ejecutar optimización de assets
+ * Ejecutar optimización de assets CONSERVADORA
  */
-function fsc_run_asset_optimization() {
-    if (class_exists('FSC_Asset_Optimizer')) {
-        $asset_optimizer = new FSC_Asset_Optimizer();
-        $asset_optimizer->optimize_all_assets();
+function sbp_run_asset_optimization() {
+    if (class_exists('SBP_Asset_Optimizer')) {
+        $asset_optimizer = new SBP_Asset_Optimizer();
+        $asset_optimizer->optimize_assets_safely();
+    }
+}
+
+/**
+ * Ejecutar optimización de PageSpeed CONSERVADORA
+ */
+function sbp_run_pagespeed_optimization() {
+    if (class_exists('SBP_PageSpeed_Optimizer')) {
+        $pagespeed_optimizer = new SBP_PageSpeed_Optimizer();
+        $pagespeed_optimizer->optimize_for_pagespeed_safely();
     }
 }
 
 /**
  * Regenerar con nueva configuración
  */
-add_action('fsc_regenerate_with_new_config', 'fsc_regenerate_with_new_config');
-function fsc_regenerate_with_new_config() {
+add_action('sbp_regenerate_with_new_config', 'sbp_regenerate_with_new_config');
+function sbp_regenerate_with_new_config() {
     // Limpiar caché existente
-    fsc_clear_all_cache();
+    sbp_clear_all_cache();
     
     // Regenerar páginas principales con nueva configuración
-    fsc_preload_cache();
+    sbp_preload_cache();
 }

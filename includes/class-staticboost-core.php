@@ -1,8 +1,8 @@
 <?php
 /**
- * Clase principal del plugin Fast Static Cache Pro
+ * Clase principal de StaticBoost Pro - Versión Conservadora
  */
-class Fast_Static_Cache {
+class StaticBoost_Core {
     
     public function __construct() {
         add_action('init', array($this, 'init'));
@@ -21,11 +21,112 @@ class Fast_Static_Cache {
         add_action('wp_footer', array($this, 'add_cache_info'), 999);
         
         // Filtros para optimización
-        add_filter('fsc_should_cache_page', array($this, 'should_cache_current_page'), 10, 2);
+        add_filter('sbp_should_cache_page', array($this, 'should_cache_current_page'), 10, 2);
+        
+        // CDN Local - Servir assets optimizados
+        add_action('init', array($this, 'setup_local_cdn'));
     }
     
     public function init() {
-        load_plugin_textdomain('fast-static-cache', false, dirname(plugin_basename(__FILE__)) . '/languages/');
+        load_plugin_textdomain('staticboost-pro', false, dirname(plugin_basename(__FILE__)) . '/languages/');
+    }
+    
+    /**
+     * Configurar CDN Local para servir assets optimizados
+     */
+    public function setup_local_cdn() {
+        // Interceptar requests a assets optimizados
+        if (isset($_GET['sbp_asset'])) {
+            $this->serve_optimized_asset();
+            exit;
+        }
+        
+        // Rewrite rules para assets optimizados
+        add_rewrite_rule(
+            '^sbp-assets/(.+)$',
+            'index.php?sbp_asset=$matches[1]',
+            'top'
+        );
+        
+        add_rewrite_tag('%sbp_asset%', '([^&]+)');
+    }
+    
+    /**
+     * Servir asset optimizado con headers de CDN
+     */
+    private function serve_optimized_asset() {
+        $asset_path = sanitize_text_field($_GET['sbp_asset']);
+        $asset_file = SBP_CACHE_DIR . 'assets/' . $asset_path;
+        
+        if (!file_exists($asset_file) || strpos($asset_path, '..') !== false) {
+            status_header(404);
+            exit;
+        }
+        
+        $mime_type = $this->get_mime_type($asset_file);
+        $etag = md5_file($asset_file);
+        $last_modified = filemtime($asset_file);
+        
+        // Headers de CDN optimizados
+        header('Content-Type: ' . $mime_type);
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
+        header('ETag: "' . $etag . '"');
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $last_modified) . ' GMT');
+        header('Vary: Accept-Encoding');
+        header('X-StaticBoost: CDN-LOCAL');
+        
+        // Verificar If-None-Match
+        if (isset($_SERVER['HTTP_IF_NONE_MATCH']) && 
+            trim($_SERVER['HTTP_IF_NONE_MATCH'], '"') === $etag) {
+            status_header(304);
+            exit;
+        }
+        
+        // Verificar If-Modified-Since
+        if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) && 
+            strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']) >= $last_modified) {
+            status_header(304);
+            exit;
+        }
+        
+        // Servir comprimido si está disponible
+        $compressed_file = $asset_file . '.gz';
+        if (file_exists($compressed_file) && $this->client_accepts_gzip()) {
+            header('Content-Encoding: gzip');
+            header('Content-Length: ' . filesize($compressed_file));
+            readfile($compressed_file);
+        } else {
+            header('Content-Length: ' . filesize($asset_file));
+            readfile($asset_file);
+        }
+        
+        exit;
+    }
+    
+    /**
+     * Obtener MIME type del archivo
+     */
+    private function get_mime_type($file) {
+        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        
+        $mime_types = array(
+            'css' => 'text/css',
+            'js' => 'application/javascript',
+            'png' => 'image/png',
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'avif' => 'image/avif',
+            'svg' => 'image/svg+xml',
+            'woff' => 'font/woff',
+            'woff2' => 'font/woff2',
+            'ttf' => 'font/ttf',
+            'eot' => 'application/vnd.ms-fontobject'
+        );
+        
+        return isset($mime_types[$extension]) ? $mime_types[$extension] : 'application/octet-stream';
     }
     
     /**
@@ -49,7 +150,7 @@ class Fast_Static_Cache {
      */
     private function should_serve_static() {
         // No servir si está deshabilitado
-        if (!get_option('fsc_enabled', true)) {
+        if (!get_option('sbp_enabled', true)) {
             return false;
         }
         
@@ -99,6 +200,7 @@ class Fast_Static_Cache {
         header('Content-Type: text/html; charset=UTF-8');
         header('X-Static-Cache: HIT');
         header('X-Cache-Status: STATIC');
+        header('X-StaticBoost: ACTIVE');
         header('Cache-Control: public, max-age=3600');
         header('Vary: Accept-Encoding');
         
@@ -136,7 +238,7 @@ class Fast_Static_Cache {
      */
     private function should_generate_static() {
         // Aplicar filtro personalizable
-        $should_cache = apply_filters('fsc_should_cache_page', true, $_SERVER['REQUEST_URI']);
+        $should_cache = apply_filters('sbp_should_cache_page', true, $_SERVER['REQUEST_URI']);
         
         if (!$should_cache) {
             return false;
@@ -196,7 +298,7 @@ class Fast_Static_Cache {
     }
     
     /**
-     * Generar archivo estático
+     * Generar archivo estático - CONSERVADOR (NO MODIFICA APARIENCIA)
      */
     public function generate_static_file($buffer) {
         if (!$this->should_generate_static_from_buffer($buffer)) {
@@ -210,16 +312,16 @@ class Fast_Static_Cache {
             wp_mkdir_p($static_dir);
         }
         
-        // Optimizar HTML antes de guardar
-        $optimized_html = $this->optimize_html_for_static($buffer);
+        // OPTIMIZACIÓN CONSERVADORA - NO CAMBIA APARIENCIA
+        $optimized_html = $this->optimize_html_conservatively($buffer);
         
         // Aplicar filtro para optimizaciones adicionales
-        $optimized_html = apply_filters('fsc_static_html', $optimized_html, $_SERVER['REQUEST_URI']);
+        $optimized_html = apply_filters('sbp_static_html', $optimized_html, $_SERVER['REQUEST_URI']);
         
         // Añadir información de caché si está habilitado
-        if (get_option('fsc_show_cache_info', true)) {
+        if (get_option('sbp_show_cache_info', true)) {
             $cache_info = sprintf(
-                "\n<!-- Fast Static Cache Pro: Generado el %s -->",
+                "\n<!-- StaticBoost Pro: Generado el %s -->",
                 date('Y-m-d H:i:s')
             );
             $optimized_html .= $cache_info;
@@ -236,6 +338,142 @@ class Fast_Static_Cache {
         }
         
         return $buffer;
+    }
+    
+    /**
+     * OPTIMIZACIÓN CONSERVADORA - NO MODIFICA APARIENCIA VISUAL
+     */
+    private function optimize_html_conservatively($html) {
+        // 1. SOLO optimizaciones que NO afecten la apariencia
+        
+        // Añadir meta tags de rendimiento (invisible al usuario)
+        $performance_meta = '
+        <meta name="generator" content="StaticBoost Pro">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        ';
+        
+        $html = str_replace('</head>', $performance_meta . '</head>', $html);
+        
+        // 2. Optimizar URLs de assets para CDN local (mantiene funcionalidad)
+        $html = $this->optimize_asset_urls_for_local_cdn($html);
+        
+        // 3. Añadir lazy loading SOLO a imágenes de contenido (no logos/iconos)
+        $html = $this->add_safe_lazy_loading($html);
+        
+        // 4. Optimizar espacios en blanco (invisible al usuario)
+        $html = $this->optimize_whitespace_safely($html);
+        
+        return $html;
+    }
+    
+    /**
+     * Optimizar URLs de assets para CDN local
+     */
+    private function optimize_asset_urls_for_local_cdn($html) {
+        $site_url = get_site_url();
+        $upload_dir = wp_upload_dir();
+        $upload_url = $upload_dir['baseurl'];
+        
+        // Solo optimizar imágenes de uploads (no del tema)
+        $html = preg_replace_callback(
+            '/src=["\'](' . preg_quote($upload_url, '/') . '[^"\']+\.(jpg|jpeg|png|gif|webp))["\']/',
+            function($matches) {
+                $original_url = $matches[1];
+                $optimized_url = $this->get_optimized_asset_url($original_url);
+                return 'src="' . $optimized_url . '"';
+            },
+            $html
+        );
+        
+        return $html;
+    }
+    
+    /**
+     * Obtener URL optimizada para asset
+     */
+    private function get_optimized_asset_url($original_url) {
+        // Si existe versión WebP optimizada, usarla
+        $path_info = pathinfo($original_url);
+        $filename = $path_info['filename'];
+        $extension = $path_info['extension'];
+        
+        // Verificar si existe versión WebP
+        $webp_file = SBP_ASSETS_DIR . 'images/' . $filename . '.webp';
+        if (file_exists($webp_file)) {
+            return site_url('sbp-assets/images/' . $filename . '.webp');
+        }
+        
+        return $original_url; // Mantener original si no hay optimizada
+    }
+    
+    /**
+     * Lazy loading SEGURO - Solo para imágenes de contenido
+     */
+    private function add_safe_lazy_loading($html) {
+        // Solo aplicar a imágenes que NO sean críticas
+        $html = preg_replace_callback(
+            '/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i',
+            array($this, 'optimize_img_tag_safely'),
+            $html
+        );
+        
+        return $html;
+    }
+    
+    /**
+     * Optimizar tag de imagen SEGURAMENTE
+     */
+    private function optimize_img_tag_safely($matches) {
+        $before_src = $matches[1];
+        $src = $matches[2];
+        $after_src = $matches[3];
+        $full_tag = $matches[0];
+        
+        // NO tocar estas imágenes críticas:
+        $critical_patterns = array(
+            'logo', 'icon', 'header', 'nav', 'menu', 'brand',
+            'avatar', 'profile', 'admin', 'wp-content/themes'
+        );
+        
+        foreach ($critical_patterns as $pattern) {
+            if (stripos($full_tag, $pattern) !== false || 
+                stripos($src, $pattern) !== false) {
+                return $matches[0]; // Devolver sin modificar
+            }
+        }
+        
+        // Verificar si es imagen pequeña (probablemente icono)
+        if (preg_match('/width=["\']?(\d+)["\']?/i', $full_tag, $width_match)) {
+            if (isset($width_match[1]) && $width_match[1] < 100) {
+                return $matches[0]; // No tocar imágenes pequeñas
+            }
+        }
+        
+        // Solo aplicar lazy loading a imágenes de contenido grandes
+        if (strpos($after_src, 'loading=') === false) {
+            $after_src .= ' loading="lazy"';
+        }
+        
+        if (strpos($after_src, 'decoding=') === false) {
+            $after_src .= ' decoding="async"';
+        }
+        
+        return '<img' . $before_src . 'src="' . $src . '"' . $after_src . '>';
+    }
+    
+    /**
+     * Optimizar espacios en blanco de forma segura
+     */
+    private function optimize_whitespace_safely($html) {
+        // Solo eliminar espacios excesivos entre tags
+        $html = preg_replace('/>\s+</', '><', $html);
+        
+        // Eliminar espacios al inicio y final de líneas
+        $html = preg_replace('/^\s+/m', '', $html);
+        $html = preg_replace('/\s+$/m', '', $html);
+        
+        return $html;
     }
     
     /**
@@ -261,32 +499,6 @@ class Fast_Static_Cache {
         return true;
     }
     
-    /**
-     * Optimizar HTML para archivo estático
-     */
-    private function optimize_html_for_static($html) {
-        $site_url = get_site_url();
-        
-        // Convertir URLs relativas a absolutas para mejor compatibilidad
-        $html = preg_replace('/href="\/([^"]*)"/', 'href="' . $site_url . '/$1"', $html);
-        $html = preg_replace('/src="\/([^"]*)"/', 'src="' . $site_url . '/$1"', $html);
-        
-        // Optimizar espacios en blanco (conservando legibilidad)
-        $html = preg_replace('/\s+/', ' ', $html);
-        $html = preg_replace('/>\s+</', '><', $html);
-        
-        // Añadir meta tags para mejor rendimiento
-        $performance_meta = '
-        <meta name="generator" content="Fast Static Cache Pro">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        ';
-        
-        $html = str_replace('</head>', $performance_meta . '</head>', $html);
-        
-        return $html;
-    }
-    
     private function get_static_file_path() {
         $request_uri = $_SERVER['REQUEST_URI'];
         $request_uri = rtrim($request_uri, '/');
@@ -295,7 +507,7 @@ class Fast_Static_Cache {
             $request_uri = '/index';
         }
         
-        return FSC_CACHE_DIR . ltrim($request_uri, '/') . '/index.html';
+        return SBP_CACHE_DIR . ltrim($request_uri, '/') . '/index.html';
     }
     
     private function is_static_file_valid($static_file) {
@@ -303,7 +515,7 @@ class Fast_Static_Cache {
             return false;
         }
         
-        $cache_lifetime = get_option('fsc_cache_lifetime', 3600);
+        $cache_lifetime = get_option('sbp_cache_lifetime', 3600);
         $file_time = filemtime($static_file);
         
         return (time() - $file_time) < $cache_lifetime;
@@ -315,7 +527,7 @@ class Fast_Static_Cache {
     }
     
     private function is_page_excluded() {
-        $excluded_pages = get_option('fsc_excluded_pages', array());
+        $excluded_pages = get_option('sbp_excluded_pages', array());
         if (is_string($excluded_pages)) {
             $excluded_pages = explode("\n", $excluded_pages);
         }
@@ -330,7 +542,7 @@ class Fast_Static_Cache {
         }
         
         // Verificar user agents excluidos
-        $excluded_user_agents = get_option('fsc_excluded_user_agents', array('bot', 'crawler', 'spider'));
+        $excluded_user_agents = get_option('sbp_excluded_user_agents', array('bot', 'crawler', 'spider'));
         if (is_string($excluded_user_agents)) {
             $excluded_user_agents = explode("\n", $excluded_user_agents);
         }
@@ -393,7 +605,7 @@ class Fast_Static_Cache {
             $path = '/index';
         }
         
-        $static_file = FSC_CACHE_DIR . ltrim($path, '/') . '/index.html';
+        $static_file = SBP_CACHE_DIR . ltrim($path, '/') . '/index.html';
         
         if (file_exists($static_file)) {
             unlink($static_file);
@@ -405,15 +617,15 @@ class Fast_Static_Cache {
     }
     
     public function add_cache_info() {
-        if (!get_option('fsc_show_cache_info', true) || is_admin() || is_user_logged_in()) {
+        if (!get_option('sbp_show_cache_info', true) || is_admin() || is_user_logged_in()) {
             return;
         }
         
         $static_file = $this->get_static_file_path();
         $is_static = file_exists($static_file);
         
-        echo "\n<!-- Fast Static Cache Pro: " . ($is_static ? 'STATIC' : 'GENERATED') . " -->";
+        echo "\n<!-- StaticBoost Pro: " . ($is_static ? 'STATIC' : 'GENERATED') . " -->";
         echo "\n<!-- Generated: " . date('Y-m-d H:i:s') . " -->";
-        echo "\n<!-- ML Optimization: " . (get_option('fsc_ml_enabled', true) ? 'ENABLED' : 'DISABLED') . " -->\n";
+        echo "\n<!-- BoostAI: " . (get_option('sbp_boostai_enabled', true) ? 'ENABLED' : 'DISABLED') . " -->\n";
     }
 }
