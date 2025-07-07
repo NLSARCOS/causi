@@ -41,13 +41,17 @@ function sbp_load_required_classes() {
     // BoostAI solo si está habilitado
     if (get_option('sbp_boostai_enabled', true)) {
         require_once SBP_PLUGIN_PATH . 'includes/class-boostai-optimizer.php';
-        new SBP_BoostAI_Optimizer();
+        if (class_exists('SBP_BoostAI_Optimizer')) {
+            new SBP_BoostAI_Optimizer();
+        }
     }
     
     // PageSpeed solo si está habilitado
     if (get_option('sbp_pagespeed_mode', true)) {
         require_once SBP_PLUGIN_PATH . 'includes/class-pagespeed-optimizer.php';
-        new SBP_PageSpeed_Optimizer();
+        if (class_exists('SBP_PageSpeed_Optimizer')) {
+            new SBP_PageSpeed_Optimizer();
+        }
     }
     
     // Asset Optimizer solo si alguna optimización está habilitada
@@ -56,26 +60,34 @@ function sbp_load_required_classes() {
         get_option('sbp_optimize_js', false) || 
         get_option('sbp_webp_conversion', true)) {
         require_once SBP_PLUGIN_PATH . 'includes/class-asset-optimizer.php';
-        new SBP_Asset_Optimizer();
+        if (class_exists('SBP_Asset_Optimizer')) {
+            new SBP_Asset_Optimizer();
+        }
     }
     
     // CDN Local solo si está habilitado
     if (get_option('sbp_local_cdn_enabled', true)) {
         require_once SBP_PLUGIN_PATH . 'includes/class-local-cdn.php';
-        new SBP_Local_CDN();
+        if (class_exists('SBP_Local_CDN')) {
+            new SBP_Local_CDN();
+        }
     }
     
     // WooCommerce solo si está activo
     if (class_exists('WooCommerce')) {
         require_once SBP_PLUGIN_PATH . 'includes/class-woocommerce-compat.php';
-        new SBP_WooCommerce_Compat();
+        if (class_exists('SBP_WooCommerce_Compat')) {
+            new SBP_WooCommerce_Compat();
+        }
     }
 }
 
 // Inicializar el plugin de forma optimizada
 function sbp_init() {
-    // Core siempre se carga
-    new StaticBoost_Core();
+    // Verificar que las clases existan antes de instanciar
+    if (class_exists('StaticBoost_Core')) {
+        new StaticBoost_Core();
+    }
     
     // Cargar otras clases según necesidad
     sbp_load_required_classes();

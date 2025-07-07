@@ -699,6 +699,3 @@ class SBP_Local_CDN {
         return $css;
     }
 }
-
-// Inicializar CDN Local
-new SBP_Local_CDN();

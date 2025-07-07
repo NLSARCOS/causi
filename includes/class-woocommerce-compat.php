@@ -2,11 +2,11 @@
 /**
  * Compatibilidad con WooCommerce
  */
-class FSC_WooCommerce_Compat {
+class SBP_WooCommerce_Compat {
     
     public function __construct() {
         add_action('init', array($this, 'init'));
-        add_filter('fsc_should_cache_page', array($this, 'exclude_woo_pages'), 10, 2);
+        add_filter('sbp_should_cache_page', array($this, 'exclude_woo_pages'), 10, 2);
         add_action('woocommerce_cart_updated', array($this, 'clear_cart_related_cache'));
         add_action('woocommerce_checkout_order_processed', array($this, 'clear_checkout_cache'));
         add_action('woocommerce_product_set_stock', array($this, 'clear_product_cache'));
@@ -15,7 +15,7 @@ class FSC_WooCommerce_Compat {
     
     public function init() {
         // Asegurar que las páginas de WooCommerce no se cacheen
-        add_filter('fsc_excluded_pages', array($this, 'add_woo_excluded_pages'));
+        add_filter('sbp_excluded_pages', array($this, 'add_woo_excluded_pages'));
     }
     
     /**
@@ -82,7 +82,7 @@ class FSC_WooCommerce_Compat {
         );
         
         foreach ($pages_to_clear as $url) {
-            fsc_clear_static_file_by_url($url);
+            sbp_clear_static_file_by_url($url);
         }
     }
     
@@ -90,8 +90,8 @@ class FSC_WooCommerce_Compat {
      * Limpiar caché del checkout
      */
     public function clear_checkout_cache() {
-        fsc_clear_static_file_by_url(wc_get_checkout_url());
-        fsc_clear_static_file_by_url(wc_get_cart_url());
+        sbp_clear_static_file_by_url(wc_get_checkout_url());
+        sbp_clear_static_file_by_url(wc_get_cart_url());
     }
     
     /**
@@ -101,19 +101,19 @@ class FSC_WooCommerce_Compat {
         $product = wc_get_product($product_id);
         if ($product) {
             $product_url = get_permalink($product_id);
-            fsc_clear_static_file_by_url($product_url);
+            sbp_clear_static_file_by_url($product_url);
             
             // También limpiar páginas de categoría del producto
             $categories = get_the_terms($product_id, 'product_cat');
             if ($categories) {
                 foreach ($categories as $category) {
                     $category_url = get_term_link($category);
-                    fsc_clear_static_file_by_url($category_url);
+                    sbp_clear_static_file_by_url($category_url);
                 }
             }
             
             // Limpiar página de tienda
-            fsc_clear_static_file_by_url(wc_get_page_permalink('shop'));
+            sbp_clear_static_file_by_url(wc_get_page_permalink('shop'));
         }
     }
 }
