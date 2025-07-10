@@ -291,9 +291,28 @@ class SBP_Admin {
                 <div class="sbp-config-section">
                     <button type="button" class="sbp-collapsible" data-target="cdn-config">
                         <span class="sbp-arrow">▼</span>
-                        🌐 CDN Local Ultra
+                        🌐 CDN Local Ultra + Object Cache
                     </button>
                     <div id="cdn-config" class="sbp-collapsible-content">
+                        <?php 
+                        $object_cache = new SBP_Object_Cache_Manager();
+                        $cache_stats = $object_cache->get_cache_stats();
+                        ?>
+                        <div class="sbp-cache-status">
+                            <h4>Estado del Object Cache</h4>
+                            <p><strong>Tipo:</strong> <?php echo strtoupper($cache_stats['type']); ?></p>
+                            <p><strong>Estado:</strong> 
+                                <span style="color: <?php echo $cache_stats['status'] === 'connected' ? '#00a32a' : '#d63638'; ?>">
+                                    <?php echo $cache_stats['status'] === 'connected' ? '🟢 Conectado' : '🔴 Desconectado'; ?>
+                                </span>
+                            </p>
+                            <p><strong>Memoria:</strong> <?php echo $cache_stats['memory_usage']; ?></p>
+                            <p><strong>Claves:</strong> <?php echo number_format($cache_stats['keys_count']); ?></p>
+                            <?php if ($cache_stats['hit_ratio'] > 0): ?>
+                            <p><strong>Hit Ratio:</strong> <?php echo $cache_stats['hit_ratio']; ?>%</p>
+                            <?php endif; ?>
+                        </div>
+                        
                         <table class="form-table">
                             <tr>
                                 <th scope="row">CDN Local</th>
@@ -313,6 +332,16 @@ class SBP_Admin {
                                         Optimizar también CSS/JS del tema
                                     </label>
                                     <p class="description">⚠️ Puede afectar funcionalidad - probar primero</p>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Object Cache</th>
+                                <td>
+                                    <p class="description">
+                                        <strong>Redis/Memcached detectado automáticamente.</strong><br>
+                                        Para Redis: Define WP_REDIS_HOST, WP_REDIS_PORT, WP_REDIS_PASSWORD en wp-config.php<br>
+                                        Para Memcached: Define WP_MEMCACHED_HOST, WP_MEMCACHED_PORT en wp-config.php
+                                    </p>
                                 </td>
                             </tr>
                         </table>
@@ -1046,6 +1075,23 @@ class SBP_Admin {
         .sbp-page-time {
             color: #666;
             font-size: 12px;
+        }
+        
+        .sbp-cache-status {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .sbp-cache-status h4 {
+            margin-top: 0;
+            color: #0073aa;
+        }
+        
+        .sbp-cache-status p {
+            margin: 5px 0;
         }
         ';
     }

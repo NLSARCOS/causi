@@ -6,8 +6,12 @@ class StaticBoost_Core {
     
     private $should_cache = null;
     private $static_file_path = null;
+    private $object_cache = null;
     
     public function __construct() {
+        // Inicializar object cache
+        $this->object_cache = new SBP_Object_Cache_Manager();
+        
         // Solo cargar hooks esenciales
         add_action('init', array($this, 'init'), 1);
         
@@ -108,6 +112,15 @@ class StaticBoost_Core {
             return $this->should_cache;
         }
         
+        // OPTIMIZACIÓN: Usar object cache para decisiones
+        $cache_key = 'should_serve_' . md5($_SERVER['REQUEST_URI']);
+        $cached_decision = $this->object_cache->get($cache_key);
+        
+        if ($cached_decision !== false) {
+            $this->should_cache = $cached_decision;
+            return $this->should_cache;
+        }
+        
         $this->should_cache = false;
         
         // Verificaciones rápidas primero
@@ -116,20 +129,24 @@ class StaticBoost_Core {
             is_admin() || 
             $_SERVER['REQUEST_METHOD'] !== 'GET' || 
             !empty($_GET)) {
+            $this->object_cache->set($cache_key, false, 300); // 5 minutos
             return $this->should_cache;
         }
         
         // Verificar exclusiones solo si es necesario
         if ($this->is_page_excluded()) {
+            $this->object_cache->set($cache_key, false, 300);
             return $this->should_cache;
         }
         
         // Verificar WooCommerce solo si está activo
         if (class_exists('WooCommerce') && $this->is_woocommerce_page()) {
+            $this->object_cache->set($cache_key, false, 300);
             return $this->should_cache;
         }
         
         $this->should_cache = true;
+        $this->object_cache->set($cache_key, true, 300); // 5 minutos
         return $this->should_cache;
     }
     
@@ -337,6 +354,7 @@ class StaticBoost_Core {
      * Lazy loading SEGURO - Solo para imágenes de contenido
      */
     private function add_safe_lazy_loading($html) {
+        // OPTIMIZACIÓN: Lazy loading menos agresivo para mayor velocidad
         // Solo aplicar a imágenes que NO sean críticas
         $html = preg_replace_callback(
             '/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i',
@@ -356,10 +374,11 @@ class StaticBoost_Core {
         $after_src = $matches[3];
         $full_tag = $matches[0];
         
-        // NO tocar estas imágenes críticas:
+        // OPTIMIZACIÓN: Lista más específica para mayor velocidad
         $critical_patterns = array(
             'logo', 'icon', 'header', 'nav', 'menu', 'brand',
-            'avatar', 'profile', 'admin', 'wp-content/themes'
+            'avatar', 'profile', 'admin', 'wp-content/themes',
+            'hero', 'banner', 'slider', 'carousel', 'above-fold'
         );
         
         foreach ($critical_patterns as $pattern) {
@@ -369,18 +388,30 @@ class StaticBoost_Core {
             }
         }
         
-        // Verificar si es imagen pequeña (probablemente icono)
+        // OPTIMIZACIÓN: Umbral más alto para lazy loading
         if (preg_match('/width=["\']?(\d+)["\']?/i', $full_tag, $width_match)) {
-            if (isset($width_match[1]) && $width_match[1] < 100) {
+            if (isset($width_match[1]) && $width_match[1] < 200) {
                 return $matches[0]; // No tocar imágenes pequeñas
             }
         }
         
-        // Solo aplicar lazy loading a imágenes de contenido grandes
-        if (strpos($after_src, 'loading=') === false) {
+        // OPTIMIZACIÓN: Verificar posición en la página
+        $position_indicators = array('fold', 'top', 'first', 'main', 'primary');
+        $is_above_fold = false;
+        
+        foreach ($position_indicators as $indicator) {
+            if (stripos($full_tag, $indicator) !== false) {
+                $is_above_fold = true;
+                break;
+            }
+        }
+        
+        // Solo aplicar lazy loading si NO está above the fold
+        if (!$is_above_fold && strpos($after_src, 'loading=') === false) {
             $after_src .= ' loading="lazy"';
         }
         
+        // Siempre añadir decoding async para mejor rendimiento
         if (strpos($after_src, 'decoding=') === false) {
             $after_src .= ' decoding="async"';
         }
@@ -427,6 +458,15 @@ class StaticBoost_Core {
             return $this->static_file_path;
         }
         
+        // OPTIMIZACIÓN: Usar object cache para paths
+        $cache_key = 'static_path_' . md5($_SERVER['REQUEST_URI']);
+        $cached_path = $this->object_cache->get($cache_key);
+        
+        if ($cached_path !== false) {
+            $this->static_file_path = $cached_path;
+            return $this->static_file_path;
+        }
+        
         $request_uri = $_SERVER['REQUEST_URI'];
         $request_uri = rtrim($request_uri, '/');
         
@@ -435,6 +475,7 @@ class StaticBoost_Core {
         }
         
         $this->static_file_path = SBP_CACHE_DIR . ltrim($request_uri, '/') . '/index.html';
+        $this->object_cache->set($cache_key, $this->static_file_path, 1800); // 30 minutos
         return $this->static_file_path;
     }
     

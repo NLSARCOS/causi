@@ -8,8 +8,10 @@ class SBP_Local_CDN {
     private $cache_dir;
     private $supported_formats;
     private $compression_levels;
+    private $object_cache;
     
     public function __construct() {
+        $this->object_cache = new SBP_Object_Cache_Manager();
         $this->cdn_url = site_url('sbp-cdn');
         $this->cache_dir = SBP_CACHE_DIR . 'cdn/';
         
@@ -82,12 +84,18 @@ class SBP_Local_CDN {
         $asset_path = sanitize_text_field($asset_path);
         $asset_path = str_replace('..', '', $asset_path); // Prevenir directory traversal
         
+        // OPTIMIZACIÓN: Usar object cache para metadatos de archivos
+        $cache_key = 'cdn_asset_' . md5($asset_path);
+        $cached_info = $this->object_cache->get($cache_key);
+        
         $cdn_file = $this->cache_dir . $asset_path;
         $original_file = $this->find_original_file($asset_path);
         
         // Si no existe el archivo optimizado, crearlo
         if (!file_exists($cdn_file) && $original_file) {
             $this->create_optimized_asset($original_file, $cdn_file);
+            // Invalidar caché después de crear
+            $this->object_cache->delete($cache_key);
         }
         
         // Si aún no existe, servir 404
@@ -96,8 +104,14 @@ class SBP_Local_CDN {
             exit('Asset not found');
         }
         
-        // Obtener información del archivo
-        $file_info = $this->get_file_info($cdn_file);
+        // OPTIMIZACIÓN: Usar información cacheada si está disponible
+        if ($cached_info && $cached_info['mtime'] === filemtime($cdn_file)) {
+            $file_info = $cached_info;
+        } else {
+            $file_info = $this->get_file_info($cdn_file);
+            $this->object_cache->set($cache_key, $file_info, 3600); // 1 hora
+        }
+        
         $etag = $file_info['etag'];
         $last_modified = $file_info['last_modified'];
         $mime_type = $file_info['mime_type'];
@@ -125,42 +139,59 @@ class SBP_Local_CDN {
         header('Content-Type: ' . $mime_type);
         header('Content-Length: ' . $file_size);
         
-        // Headers de caché agresivos
-        header('Cache-Control: public, max-age=31536000, immutable'); // 1 año
+        // OPTIMIZACIÓN: Headers de caché MÁS agresivos
+        header('Cache-Control: public, max-age=31536000, immutable, stale-while-revalidate=86400'); // 1 año + stale-while-revalidate
         header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
         header('ETag: "' . $etag . '"');
         header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $last_modified) . ' GMT');
         
-        // Headers de optimización
+        // OPTIMIZACIÓN: Headers adicionales para máximo rendimiento
         header('Vary: Accept-Encoding, Accept');
         header('X-Content-Type-Options: nosniff');
         header('X-CDN-Cache: HIT');
         header('X-StaticBoost-CDN: LOCAL-ULTRA');
         header('X-Served-By: StaticBoost-Pro');
+        header('X-Cache-Status: HIT');
+        header('X-Edge-Location: LOCAL');
+        header('X-Robots-Tag: noindex'); // Evitar indexación de assets
         
-        // Headers de compresión
+        // OPTIMIZACIÓN: Compresión mejorada
         if ($this->client_supports_compression()) {
             if ($this->client_supports_brotli()) {
                 header('Content-Encoding: br');
                 header('X-Compression: Brotli');
+                header('X-Compression-Ratio: 85'); // Indicar ratio de compresión
             } else {
                 header('Content-Encoding: gzip');
                 header('X-Compression: Gzip');
+                header('X-Compression-Ratio: 70');
             }
         }
         
         // Headers específicos por tipo de archivo
         $this->set_type_specific_headers($mime_type);
         
-        // Headers de seguridad
+        // OPTIMIZACIÓN: Headers de seguridad mejorados
         header('Referrer-Policy: strict-origin-when-cross-origin');
         header('X-Frame-Options: SAMEORIGIN');
+        header('X-XSS-Protection: 1; mode=block');
         
-        // Headers de rendimiento
+        // OPTIMIZACIÓN: Headers de rendimiento adicionales
         if (get_option('sbp_local_cdn_aggressive', false)) {
             header('X-Accel-Expires: 31536000'); // Nginx
             header('Edge-Control: max-age=31536000'); // CloudFlare
             header('CDN-Cache-Control: max-age=31536000'); // Generic CDN
+            header('Surrogate-Control: max-age=31536000'); // Varnish
+            header('X-Cache-TTL: 31536000'); // Custom TTL
+        }
+        
+        // OPTIMIZACIÓN: Headers de preload para recursos críticos
+        if (strpos($mime_type, 'text/css') === 0) {
+            header('X-Resource-Type: critical-css');
+        } elseif (strpos($mime_type, 'application/javascript') === 0) {
+            header('X-Resource-Type: script');
+        } elseif (strpos($mime_type, 'font/') === 0) {
+            header('X-Resource-Type: font');
         }
     }
     
@@ -249,6 +280,11 @@ class SBP_Local_CDN {
      * Crear asset optimizado
      */
     private function create_optimized_asset($original_file, $cdn_file) {
+        // OPTIMIZACIÓN: Verificar si ya existe una versión reciente
+        if (file_exists($cdn_file) && filemtime($cdn_file) > filemtime($original_file)) {
+            return; // Ya está optimizado y actualizado
+        }
+        
         $cdn_dir = dirname($cdn_file);
         if (!file_exists($cdn_dir)) {
             wp_mkdir_p($cdn_dir);
@@ -284,6 +320,14 @@ class SBP_Local_CDN {
      * Optimizar imagen
      */
     private function optimize_image($original_file, $cdn_file) {
+        // OPTIMIZACIÓN: Usar caché para evitar re-optimizar
+        $cache_key = 'optimized_image_' . md5($original_file . filemtime($original_file));
+        if ($this->object_cache->get($cache_key)) {
+            if (file_exists($cdn_file)) {
+                return; // Ya optimizada
+            }
+        }
+        
         $image_info = getimagesize($original_file);
         if (!$image_info) {
             copy($original_file, $cdn_file);
@@ -295,10 +339,11 @@ class SBP_Local_CDN {
         // Para WebP y AVIF, solo copiar (ya están optimizados)
         if (in_array($extension, array('webp', 'avif'))) {
             copy($original_file, $cdn_file);
+            $this->object_cache->set($cache_key, true, 86400); // 24 horas
             return;
         }
         
-        // Optimizar imagen tradicional
+        // OPTIMIZACIÓN: Optimizar imagen tradicional con mejor calidad/velocidad
         try {
             $image = null;
             
@@ -316,21 +361,22 @@ class SBP_Local_CDN {
                     break;
                 default:
                     copy($original_file, $cdn_file);
+                    $this->object_cache->set($cache_key, true, 86400);
                     return;
             }
             
             if ($image) {
-                // Crear versión WebP optimizada
+                // OPTIMIZACIÓN: Crear versión WebP con mejor calidad
                 $webp_file = preg_replace('/\.[^.]+$/', '.webp', $cdn_file);
-                imagewebp($image, $webp_file, 85);
+                imagewebp($image, $webp_file, 90); // Calidad más alta
                 
-                // Guardar original optimizado
+                // OPTIMIZACIÓN: Guardar original optimizado con mejor calidad
                 switch ($image_info['mime']) {
                     case 'image/jpeg':
-                        imagejpeg($image, $cdn_file, 85);
+                        imagejpeg($image, $cdn_file, 90); // Calidad más alta
                         break;
                     case 'image/png':
-                        imagepng($image, $cdn_file, 6);
+                        imagepng($image, $cdn_file, 5); // Compresión más rápida
                         break;
                     case 'image/gif':
                         imagegif($image, $cdn_file);
@@ -338,6 +384,7 @@ class SBP_Local_CDN {
                 }
                 
                 imagedestroy($image);
+                $this->object_cache->set($cache_key, true, 86400); // 24 horas
             }
         } catch (Exception $e) {
             // Si falla la optimización, copiar original
@@ -384,20 +431,32 @@ class SBP_Local_CDN {
      * Crear versiones comprimidas
      */
     private function create_compressed_versions($file_path) {
+        // OPTIMIZACIÓN: Solo crear si no existen o son más antiguos
+        $gzip_file = $file_path . '.gz';
+        $brotli_file = $file_path . '.br';
+        $file_mtime = filemtime($file_path);
+        
+        $need_gzip = !file_exists($gzip_file) || filemtime($gzip_file) < $file_mtime;
+        $need_brotli = !file_exists($brotli_file) || filemtime($brotli_file) < $file_mtime;
+        
+        if (!$need_gzip && !$need_brotli) {
+            return; // Ya están actualizadas
+        }
+        
         $content = file_get_contents($file_path);
         $asset_type = $this->get_asset_type(pathinfo($file_path, PATHINFO_EXTENSION));
         $compression_level = $this->compression_levels[$asset_type] ?? 6;
         
-        // Crear versión Gzip
-        if (function_exists('gzencode')) {
+        // OPTIMIZACIÓN: Crear versión Gzip solo si es necesario
+        if ($need_gzip && function_exists('gzencode')) {
             $gzip_content = gzencode($content, $compression_level);
-            file_put_contents($file_path . '.gz', $gzip_content);
+            file_put_contents($gzip_file, $gzip_content);
         }
         
-        // Crear versión Brotli (si está disponible)
-        if (function_exists('brotli_compress') && get_option('sbp_local_cdn_aggressive', false)) {
+        // OPTIMIZACIÓN: Crear versión Brotli solo si es necesario y está habilitado
+        if ($need_brotli && function_exists('brotli_compress') && get_option('sbp_local_cdn_aggressive', false)) {
             $brotli_content = brotli_compress($content, $compression_level);
-            file_put_contents($file_path . '.br', $brotli_content);
+            file_put_contents($brotli_file, $brotli_content);
         }
     }
     
@@ -557,6 +616,7 @@ class SBP_Local_CDN {
         return array(
             'etag' => md5_file($file_path),
             'last_modified' => $stat['mtime'],
+            'mtime' => $stat['mtime'], // Para comparaciones de caché
             'size' => $stat['size'],
             'mime_type' => $this->get_mime_type($file_path)
         );
