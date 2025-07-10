@@ -1,13 +1,17 @@
 <?php
 /**
- * Clase principal de StaticBoost Pro - Versión SIMPLIFICADA
+ * Clase principal de StaticBoost Pro - Versión COMPLETA OPTIMIZADA
  */
 class StaticBoost_Core {
     
     private $should_cache = null;
     private $static_file_path = null;
+    private $object_cache = null;
     
     public function __construct() {
+        // Inicializar Object Cache
+        $this->object_cache = new SBP_Object_Cache_Manager();
+        
         // Solo cargar hooks esenciales
         add_action('init', array($this, 'init'), 1);
         
@@ -84,7 +88,7 @@ class StaticBoost_Core {
     }
     
     /**
-     * Servir archivo estático si existe - OPTIMIZADO
+     * Servir archivo estático si existe - OPTIMIZADO CON OBJECT CACHE
      */
     public function serve_static_if_exists() {
         if (!$this->should_serve_static()) {
@@ -93,7 +97,16 @@ class StaticBoost_Core {
         
         $static_file = $this->get_static_file_path();
         
-        if ($this->is_static_file_valid($static_file)) {
+        // OPTIMIZACIÓN: Usar object cache para verificar validez del archivo
+        $cache_key = 'static_file_valid_' . md5($static_file);
+        $is_valid = $this->object_cache->get($cache_key);
+        
+        if ($is_valid === null) {
+            $is_valid = $this->is_static_file_valid($static_file);
+            $this->object_cache->set($cache_key, $is_valid, 300); // 5 minutos
+        }
+        
+        if ($is_valid) {
             $this->serve_static_file_optimized($static_file);
             exit;
         }
@@ -119,8 +132,17 @@ class StaticBoost_Core {
             return $this->should_cache;
         }
         
-        // Verificar exclusiones solo si es necesario
-        if ($this->is_page_excluded()) {
+        // OPTIMIZACIÓN: Usar object cache para verificar exclusiones
+        $request_uri = $_SERVER['REQUEST_URI'];
+        $cache_key = 'page_excluded_' . md5($request_uri);
+        $is_excluded = $this->object_cache->get($cache_key);
+        
+        if ($is_excluded === null) {
+            $is_excluded = $this->is_page_excluded();
+            $this->object_cache->set($cache_key, $is_excluded, 3600); // 1 hora
+        }
+        
+        if ($is_excluded) {
             return $this->should_cache;
         }
         
@@ -153,12 +175,25 @@ class StaticBoost_Core {
     }
     
     /**
-     * Servir archivo estático optimizado
+     * Servir archivo estático optimizado CON OBJECT CACHE
      */
     private function serve_static_file_optimized($static_file) {
-        // Headers optimizados para máximo rendimiento
-        $etag = md5_file($static_file);
-        $last_modified = filemtime($static_file);
+        // OPTIMIZACIÓN: Usar object cache para metadatos del archivo
+        $cache_key = 'static_file_meta_' . md5($static_file);
+        $file_meta = $this->object_cache->get($cache_key);
+        
+        if ($file_meta === null || $file_meta['mtime'] !== filemtime($static_file)) {
+            $file_meta = array(
+                'etag' => md5_file($static_file),
+                'mtime' => filemtime($static_file),
+                'size' => filesize($static_file)
+            );
+            $this->object_cache->set($cache_key, $file_meta, 3600); // 1 hora
+        }
+        
+        $etag = $file_meta['etag'];
+        $last_modified = $file_meta['mtime'];
+        $file_size = $file_meta['size'];
         
         // Verificar caché del cliente primero
         if ($this->client_has_valid_cache($etag, $last_modified)) {
@@ -166,13 +201,20 @@ class StaticBoost_Core {
             exit;
         }
         
-        // Headers de rendimiento
+        // Headers de rendimiento MEJORADOS
         header('Content-Type: text/html; charset=UTF-8');
         header('X-Static-Cache: HIT');
         header('X-StaticBoost: ACTIVE');
-        header('Cache-Control: public, max-age=3600');
+        header('X-Object-Cache: ' . strtoupper($this->object_cache->get_info()['type']));
+        header('Cache-Control: public, max-age=3600, stale-while-revalidate=86400'); // Stale-while-revalidate
         header('ETag: "' . $etag . '"');
         header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $last_modified) . ' GMT');
+        
+        // OPTIMIZACIÓN: Headers adicionales para mejor rendimiento
+        header('Vary: Accept-Encoding, Accept');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: SAMEORIGIN');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
         
         // Servir versión comprimida si está disponible
         $compressed_file = $static_file . '.gz';
@@ -180,9 +222,10 @@ class StaticBoost_Core {
         if (file_exists($compressed_file) && $this->client_accepts_gzip()) {
             header('Content-Encoding: gzip');
             header('Content-Length: ' . filesize($compressed_file));
+            header('X-Compression: Gzip');
             readfile($compressed_file);
         } else {
-            header('Content-Length: ' . filesize($static_file));
+            header('Content-Length: ' . $file_size);
             readfile($static_file);
         }
     }
@@ -232,7 +275,7 @@ class StaticBoost_Core {
     }
     
     /**
-     * Generar archivo estático - SIMPLIFICADO
+     * Generar archivo estático - OPTIMIZADO Y CONSERVADOR
      */
     public function generate_static_file($buffer) {
         if (!$this->should_generate_static_from_buffer($buffer)) {
@@ -246,14 +289,18 @@ class StaticBoost_Core {
             wp_mkdir_p($static_dir);
         }
         
-        // SOLO optimizaciones básicas
-        $optimized_html = $this->optimize_html_basic($buffer);
+        // OPTIMIZACIÓN CONSERVADORA - NO CAMBIA APARIENCIA
+        $optimized_html = $this->optimize_html_conservatively($buffer);
+        
+        // Aplicar filtro para optimizaciones adicionales
+        $optimized_html = apply_filters('sbp_static_html', $optimized_html, $_SERVER['REQUEST_URI']);
         
         // Añadir información de caché si está habilitado
         if (get_option('sbp_show_cache_info', true)) {
             $cache_info = sprintf(
-                "\n<!-- StaticBoost Pro: Generado el %s -->",
-                date('Y-m-d H:i:s')
+                "\n<!-- StaticBoost Pro: Generado el %s | Object Cache: %s -->",
+                date('Y-m-d H:i:s'),
+                strtoupper($this->object_cache->get_info()['type'])
             );
             $optimized_html .= $cache_info;
         }
@@ -266,18 +313,42 @@ class StaticBoost_Core {
             if (function_exists('gzencode')) {
                 file_put_contents($static_file . '.gz', gzencode($optimized_html, 9), LOCK_EX);
             }
+            
+            // OPTIMIZACIÓN: Invalidar caché de metadatos
+            $cache_key = 'static_file_meta_' . md5($static_file);
+            $this->object_cache->delete($cache_key);
+            
+            $cache_key = 'static_file_valid_' . md5($static_file);
+            $this->object_cache->delete($cache_key);
         }
         
         return $buffer;
     }
     
     /**
-     * OPTIMIZACIÓN BÁSICA - Solo lo esencial
+     * OPTIMIZACIÓN CONSERVADORA - NO MODIFICA APARIENCIA VISUAL
      */
-    private function optimize_html_basic($html) {
-        // Solo minificar HTML si está habilitado
-        if (get_option('sbp_minify_html', false)) {
+    private function optimize_html_conservatively($html) {
+        // Solo aplicar optimizaciones habilitadas
+        
+        // 1. Minificar HTML si está habilitado
+        if (get_option('sbp_minify_html', true)) {
             $html = $this->minify_html_safely($html);
+        }
+        
+        // 2. Añadir preconnect headers si está habilitado
+        if (get_option('sbp_preload_resources', true)) {
+            $html = $this->add_preconnect_headers($html);
+        }
+        
+        // 3. Lazy loading si está habilitado
+        if (get_option('sbp_lazy_loading', true)) {
+            $html = $this->add_safe_lazy_loading($html);
+        }
+        
+        // 4. Eliminar query strings si está habilitado
+        if (get_option('sbp_remove_query_strings', true)) {
+            $html = $this->remove_query_strings_from_assets($html);
         }
         
         return $html;
@@ -293,6 +364,88 @@ class StaticBoost_Core {
         // Eliminar espacios al inicio y final de líneas
         $html = preg_replace('/^\s+/m', '', $html);
         $html = preg_replace('/\s+$/m', '', $html);
+        
+        return $html;
+    }
+    
+    /**
+     * Añadir headers de preconnect
+     */
+    private function add_preconnect_headers($html) {
+        $preconnect_headers = '';
+        
+        // Solo preconnect a dominios seguros
+        $preconnect_headers .= '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n";
+        $preconnect_headers .= '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
+        
+        // Insertar en el head
+        $html = str_replace('</head>', $preconnect_headers . '</head>', $html);
+        
+        return $html;
+    }
+    
+    /**
+     * Lazy loading SEGURO - Solo para imágenes de contenido
+     */
+    private function add_safe_lazy_loading($html) {
+        // Solo aplicar a imágenes que NO sean críticas
+        $html = preg_replace_callback(
+            '/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i',
+            array($this, 'optimize_img_tag_safely'),
+            $html
+        );
+        
+        return $html;
+    }
+    
+    /**
+     * Optimizar tag de imagen SEGURAMENTE
+     */
+    private function optimize_img_tag_safely($matches) {
+        $before_src = $matches[1];
+        $src = $matches[2];
+        $after_src = $matches[3];
+        $full_tag = $matches[0];
+        
+        // NO tocar estas imágenes críticas:
+        $critical_patterns = array(
+            'logo', 'icon', 'header', 'nav', 'menu', 'brand',
+            'avatar', 'profile', 'admin', 'wp-content/themes'
+        );
+        
+        foreach ($critical_patterns as $pattern) {
+            if (stripos($full_tag, $pattern) !== false || 
+                stripos($src, $pattern) !== false) {
+                return $matches[0]; // Devolver sin modificar
+            }
+        }
+        
+        // Verificar si es imagen pequeña (probablemente icono)
+        if (preg_match('/width=["\']?(\d+)["\']?/i', $full_tag, $width_match)) {
+            if (isset($width_match[1]) && $width_match[1] < 100) {
+                return $matches[0]; // No tocar imágenes pequeñas
+            }
+        }
+        
+        // Solo aplicar lazy loading a imágenes de contenido grandes
+        if (strpos($after_src, 'loading=') === false) {
+            $after_src .= ' loading="lazy"';
+        }
+        
+        if (strpos($after_src, 'decoding=') === false) {
+            $after_src .= ' decoding="async"';
+        }
+        
+        return '<img' . $before_src . 'src="' . $src . '"' . $after_src . '>';
+    }
+    
+    /**
+     * Eliminar query strings de assets
+     */
+    private function remove_query_strings_from_assets($html) {
+        // Eliminar query strings de CSS y JS
+        $html = preg_replace('/(<link[^>]*href=["\'][^"\']*\.css)\?[^"\']*(["\'][^>]*>)/', '$1$2', $html);
+        $html = preg_replace('/(<script[^>]*src=["\'][^"\']*\.js)\?[^"\']*(["\'][^>]*>)/', '$1$2', $html);
         
         return $html;
     }
@@ -400,6 +553,13 @@ class StaticBoost_Core {
         
         if (file_exists($static_file)) {
             unlink($static_file);
+            
+            // OPTIMIZACIÓN: Invalidar caché de object cache
+            $cache_key = 'static_file_meta_' . md5($static_file);
+            $this->object_cache->delete($cache_key);
+            
+            $cache_key = 'static_file_valid_' . md5($static_file);
+            $this->object_cache->delete($cache_key);
         }
         
         if (file_exists($static_file . '.gz')) {
@@ -414,9 +574,12 @@ class StaticBoost_Core {
         
         $static_file = $this->get_static_file_path();
         $is_static = file_exists($static_file);
+        $cache_info = $this->object_cache->get_info();
         
         echo "\n<!-- StaticBoost Pro: " . ($is_static ? 'STATIC' : 'GENERATED') . " -->";
         echo "\n<!-- Generated: " . date('Y-m-d H:i:s') . " -->";
-        echo "\n<!-- Mode: BASIC (CPU-Optimized) -->\n";
+        echo "\n<!-- Object Cache: " . strtoupper($cache_info['type']) . " (" . ($cache_info['connected'] ? 'Connected' : 'Disconnected') . ") -->";
+        echo "\n<!-- BoostAI: " . (get_option('sbp_boostai_enabled', true) ? 'ENABLED' : 'DISABLED') . " -->";
+        echo "\n<!-- CDN Local: " . (get_option('sbp_local_cdn_enabled', true) ? 'ENABLED' : 'DISABLED') . " -->\n";
     }
 }
