@@ -6,11 +6,11 @@ class StaticBoost_Core {
     
     private $should_cache = null;
     private $static_file_path = null;
-    private $object_cache = null;
+    // private $object_cache = null; // DESACTIVADO TEMPORALMENTE
     
     public function __construct() {
-        // Inicializar object cache
-        $this->object_cache = new SBP_Object_Cache_Manager();
+        // DESACTIVADO: Inicializar object cache
+        // $this->object_cache = new SBP_Object_Cache_Manager();
         
         // Solo cargar hooks esenciales
         add_action('init', array($this, 'init'), 1);
@@ -112,14 +112,9 @@ class StaticBoost_Core {
             return $this->should_cache;
         }
         
-        // OPTIMIZACIÓN: Usar object cache para decisiones
-        $cache_key = 'should_serve_' . md5($_SERVER['REQUEST_URI']);
-        $cached_decision = $this->object_cache->get($cache_key);
-        
-        if ($cached_decision !== false) {
-            $this->should_cache = $cached_decision;
-            return $this->should_cache;
-        }
+        // DESACTIVADO: Object cache para decisiones
+        // $cache_key = 'should_serve_' . md5($_SERVER['REQUEST_URI']);
+        // $cached_decision = $this->object_cache->get($cache_key);
         
         $this->should_cache = false;
         
@@ -129,24 +124,24 @@ class StaticBoost_Core {
             is_admin() || 
             $_SERVER['REQUEST_METHOD'] !== 'GET' || 
             !empty($_GET)) {
-            $this->object_cache->set($cache_key, false, 300); // 5 minutos
+            // DESACTIVADO: $this->object_cache->set($cache_key, false, 300);
             return $this->should_cache;
         }
         
         // Verificar exclusiones solo si es necesario
         if ($this->is_page_excluded()) {
-            $this->object_cache->set($cache_key, false, 300);
+            // DESACTIVADO: $this->object_cache->set($cache_key, false, 300);
             return $this->should_cache;
         }
         
         // Verificar WooCommerce solo si está activo
         if (class_exists('WooCommerce') && $this->is_woocommerce_page()) {
-            $this->object_cache->set($cache_key, false, 300);
+            // DESACTIVADO: $this->object_cache->set($cache_key, false, 300);
             return $this->should_cache;
         }
         
         $this->should_cache = true;
-        $this->object_cache->set($cache_key, true, 300); // 5 minutos
+        // DESACTIVADO: $this->object_cache->set($cache_key, true, 300);
         return $this->should_cache;
     }
     
@@ -354,7 +349,7 @@ class StaticBoost_Core {
      * Lazy loading SEGURO - Solo para imágenes de contenido
      */
     private function add_safe_lazy_loading($html) {
-        // OPTIMIZACIÓN: Lazy loading menos agresivo para mayor velocidad
+        // OPTIMIZACIÓN: Lazy loading MUY CONSERVADOR para máxima velocidad
         // Solo aplicar a imágenes que NO sean críticas
         $html = preg_replace_callback(
             '/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i',
@@ -374,11 +369,12 @@ class StaticBoost_Core {
         $after_src = $matches[3];
         $full_tag = $matches[0];
         
-        // OPTIMIZACIÓN: Lista más específica para mayor velocidad
+        // OPTIMIZACIÓN: Lista MUY ESPECÍFICA - NO tocar casi nada
         $critical_patterns = array(
             'logo', 'icon', 'header', 'nav', 'menu', 'brand',
             'avatar', 'profile', 'admin', 'wp-content/themes',
-            'hero', 'banner', 'slider', 'carousel', 'above-fold'
+            'hero', 'banner', 'slider', 'carousel', 'above-fold',
+            'featured', 'main', 'primary', 'top', 'first'
         );
         
         foreach ($critical_patterns as $pattern) {
@@ -388,14 +384,14 @@ class StaticBoost_Core {
             }
         }
         
-        // OPTIMIZACIÓN: Umbral más alto para lazy loading
+        // OPTIMIZACIÓN: Umbral MUY ALTO - solo imágenes grandes
         if (preg_match('/width=["\']?(\d+)["\']?/i', $full_tag, $width_match)) {
-            if (isset($width_match[1]) && $width_match[1] < 200) {
+            if (isset($width_match[1]) && $width_match[1] < 400) {
                 return $matches[0]; // No tocar imágenes pequeñas
             }
         }
         
-        // OPTIMIZACIÓN: Verificar posición en la página
+        // OPTIMIZACIÓN: Verificar posición - ser MUY conservador
         $position_indicators = array('fold', 'top', 'first', 'main', 'primary');
         $is_above_fold = false;
         
@@ -406,14 +402,16 @@ class StaticBoost_Core {
             }
         }
         
-        // Solo aplicar lazy loading si NO está above the fold
-        if (!$is_above_fold && strpos($after_src, 'loading=') === false) {
+        // SOLO aplicar lazy loading si está MUY abajo y es grande
+        if (!$is_above_fold && 
+            strpos($after_src, 'loading=') === false &&
+            strpos($full_tag, 'content') !== false) { // Solo en contenido
             $after_src .= ' loading="lazy"';
         }
         
-        // Siempre añadir decoding async para mejor rendimiento
+        // NO añadir decoding async por ahora
         if (strpos($after_src, 'decoding=') === false) {
-            $after_src .= ' decoding="async"';
+            // $after_src .= ' decoding="async"'; // DESACTIVADO
         }
         
         return '<img' . $before_src . 'src="' . $src . '"' . $after_src . '>';
@@ -458,14 +456,9 @@ class StaticBoost_Core {
             return $this->static_file_path;
         }
         
-        // OPTIMIZACIÓN: Usar object cache para paths
-        $cache_key = 'static_path_' . md5($_SERVER['REQUEST_URI']);
-        $cached_path = $this->object_cache->get($cache_key);
-        
-        if ($cached_path !== false) {
-            $this->static_file_path = $cached_path;
-            return $this->static_file_path;
-        }
+        // DESACTIVADO: Object cache para paths
+        // $cache_key = 'static_path_' . md5($_SERVER['REQUEST_URI']);
+        // $cached_path = $this->object_cache->get($cache_key);
         
         $request_uri = $_SERVER['REQUEST_URI'];
         $request_uri = rtrim($request_uri, '/');
@@ -475,7 +468,7 @@ class StaticBoost_Core {
         }
         
         $this->static_file_path = SBP_CACHE_DIR . ltrim($request_uri, '/') . '/index.html';
-        $this->object_cache->set($cache_key, $this->static_file_path, 1800); // 30 minutos
+        // DESACTIVADO: $this->object_cache->set($cache_key, $this->static_file_path, 1800);
         return $this->static_file_path;
     }
     

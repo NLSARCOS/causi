@@ -28,7 +28,7 @@ define('SBP_VERSION', '2.1.0');
 
 // Incluir archivos necesarios
 require_once SBP_PLUGIN_PATH . 'includes/class-staticboost-core.php';
-require_once SBP_PLUGIN_PATH . 'includes/class-object-cache-manager.php';
+// require_once SBP_PLUGIN_PATH . 'includes/class-object-cache-manager.php'; // DESACTIVADO TEMPORALMENTE
 require_once SBP_PLUGIN_PATH . 'includes/functions.php';
 
 // Solo cargar clases necesarias según el contexto
