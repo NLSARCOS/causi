@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Fast Static Cache Pro
  * Plugin URI: https://github.com/yourname/fast-static-cache
- * Description: Sistema de caché estático ultra optimizado que sirve HTML directamente sin cargar WordPress. Compatible con Redis/Memcached usando la misma base de Object Cache Pro.
+ * Description: Sistema de caché estático CONSERVADOR que mantiene la apariencia exacta del sitio. Compatible con Elementor, Divi, y todos los temas.
  * Version: 3.0.0
  * Author: Tu Nombre
  * License: GPL v2 or later
@@ -21,17 +21,17 @@ define('FSC_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('FSC_CACHE_DIR', WP_CONTENT_DIR . '/cache/fast-static-cache/');
 define('FSC_VERSION', '3.0.0');
 
-// SISTEMA ULTRA OPTIMIZADO - SERVIR HTML DIRECTAMENTE
+// SISTEMA CONSERVADOR - SERVIR HTML ESTÁTICO SIN MODIFICACIONES
 // Este código se ejecuta ANTES que WordPress para máxima velocidad
 if (!defined('WP_CLI') && !is_admin() && $_SERVER['REQUEST_METHOD'] === 'GET' && empty($_GET)) {
-    fsc_serve_static_directly();
+    fsc_serve_static_conservatively();
 }
 
 /**
- * SERVIR ARCHIVOS ESTÁTICOS DIRECTAMENTE - SIN CARGAR WORDPRESS
- * Esta función se ejecuta ANTES que WordPress para máxima velocidad
+ * SERVIR ARCHIVOS ESTÁTICOS DE FORMA CONSERVADORA
+ * Mantiene la apariencia exacta del sitio
  */
-function fsc_serve_static_directly() {
+function fsc_serve_static_conservatively() {
     // Verificar si el usuario está logueado (cookies)
     if (fsc_user_is_logged_in()) {
         return; // Cargar WordPress normalmente
@@ -50,8 +50,8 @@ function fsc_serve_static_directly() {
         return; // Cargar WordPress normalmente
     }
     
-    // SERVIR ARCHIVO ESTÁTICO DIRECTAMENTE
-    fsc_serve_static_file_ultra_fast($static_file);
+    // SERVIR ARCHIVO ESTÁTICO SIN MODIFICACIONES
+    fsc_serve_static_file_conservatively($static_file);
     exit; // NO CARGAR WORDPRESS
 }
 
@@ -129,21 +129,21 @@ function fsc_is_file_valid($file_path) {
 }
 
 /**
- * SERVIR ARCHIVO ESTÁTICO ULTRA RÁPIDO
+ * SERVIR ARCHIVO ESTÁTICO DE FORMA CONSERVADORA
+ * Sin modificaciones que puedan romper la apariencia
  */
-function fsc_serve_static_file_ultra_fast($file_path) {
+function fsc_serve_static_file_conservatively($file_path) {
     $etag = md5_file($file_path);
     $last_modified = filemtime($file_path);
     $file_size = filesize($file_path);
     
-    // Headers de caché ultra agresivos
+    // Headers conservadores - no agresivos
     header('Content-Type: text/html; charset=UTF-8');
-    header('X-Static-Cache: HIT-DIRECT');
-    header('X-Fast-Static: ULTRA');
-    header('Cache-Control: public, max-age=3600, stale-while-revalidate=86400');
+    header('X-Static-Cache: HIT-CONSERVATIVE');
+    header('X-Fast-Static: CONSERVATIVE');
+    header('Cache-Control: public, max-age=3600');
     header('ETag: "' . $etag . '"');
     header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $last_modified) . ' GMT');
-    header('Vary: Accept-Encoding');
     
     // Verificar caché del cliente
     if (fsc_client_has_cache($etag, $last_modified)) {
@@ -242,39 +242,36 @@ function fsc_activate() {
     // Instalar Object Cache automáticamente
     FSC_Object_Cache_Pro::install();
     
-    // Crear .htaccess ultra optimizado
+    // Crear .htaccess conservador
     fsc_create_htaccess();
     
     // Configuración por defecto
     add_option('fsc_enabled', true);
     add_option('fsc_cache_lifetime', 3600);
     add_option('fsc_excluded_pages', array('/cart', '/checkout', '/my-account'));
+    add_option('fsc_conservative_mode', true); // MODO CONSERVADOR por defecto
 }
 
 /**
- * Crear .htaccess ultra optimizado
+ * Crear .htaccess conservador
  */
 function fsc_create_htaccess() {
     $htaccess_content = '
-# Fast Static Cache Pro - ULTRA OPTIMIZADO
+# Fast Static Cache Pro - MODO CONSERVADOR
 <IfModule mod_rewrite.c>
 RewriteEngine On
 
-# SERVIR ARCHIVOS ESTÁTICOS DIRECTAMENTE - SIN CARGAR WORDPRESS
+# SERVIR ARCHIVOS ESTÁTICOS SIN MODIFICACIONES
 RewriteCond %{REQUEST_METHOD} GET
 RewriteCond %{QUERY_STRING} ^$
 RewriteCond %{HTTP_COOKIE} !wordpress_logged_in_
 RewriteCond %{HTTP_COOKIE} !wp-postpass_
 RewriteCond %{HTTP_COOKIE} !comment_author_
 RewriteCond %{HTTP_COOKIE} !woocommerce_cart_hash
-RewriteCond %{HTTP_COOKIE} !woocommerce_items_in_cart
 RewriteCond %{REQUEST_URI} !^/wp-admin/
 RewriteCond %{REQUEST_URI} !^/wp-content/
 RewriteCond %{REQUEST_URI} !^/wp-includes/
 RewriteCond %{REQUEST_URI} !^/wp-json/
-RewriteCond %{REQUEST_URI} !^/cart/
-RewriteCond %{REQUEST_URI} !^/checkout/
-RewriteCond %{REQUEST_URI} !^/my-account/
 
 # Página principal
 RewriteCond %{REQUEST_URI} ^/$
@@ -287,73 +284,31 @@ RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/fast-static-cache%{REQUEST_URI}/in
 RewriteRule ^(.*)$ wp-content/cache/fast-static-cache/$1/index.html [L]
 </IfModule>
 
-# Headers ultra optimizados
+# Headers conservadores
 <IfModule mod_expires.c>
 ExpiresActive On
 ExpiresByType text/html "access plus 1 hour"
-ExpiresByType text/css "access plus 1 year"
-ExpiresByType application/javascript "access plus 1 year"
-ExpiresByType image/png "access plus 1 year"
-ExpiresByType image/jpg "access plus 1 year"
-ExpiresByType image/jpeg "access plus 1 year"
-ExpiresByType image/gif "access plus 1 year"
-ExpiresByType image/webp "access plus 1 year"
-ExpiresByType font/woff "access plus 1 year"
-ExpiresByType font/woff2 "access plus 1 year"
+ExpiresByType text/css "access plus 1 month"
+ExpiresByType application/javascript "access plus 1 month"
+ExpiresByType image/png "access plus 1 month"
+ExpiresByType image/jpg "access plus 1 month"
+ExpiresByType image/jpeg "access plus 1 month"
+ExpiresByType image/gif "access plus 1 month"
+ExpiresByType image/webp "access plus 1 month"
 </IfModule>
 
 <IfModule mod_deflate.c>
-AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json image/svg+xml
-SetOutputFilter DEFLATE
+AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript
 </IfModule>
 
 <IfModule mod_headers.c>
-Header set X-Static-Cache "HIT"
-Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{REQUEST_URI} =~ m#\.(css|js|png|jpg|jpeg|gif|webp|woff|woff2)$#"
-Header set Cache-Control "public, max-age=3600, stale-while-revalidate=86400" "expr=%{REQUEST_URI} =~ m#\.html$#"
+Header set X-Static-Cache "HIT-CONSERVATIVE"
+Header set Cache-Control "public, max-age=2592000" "expr=%{REQUEST_URI} =~ m#\.(css|js|png|jpg|jpeg|gif|webp)$#"
+Header set Cache-Control "public, max-age=3600" "expr=%{REQUEST_URI} =~ m#\.html$#"
 </IfModule>
 ';
     
     file_put_contents(FSC_CACHE_DIR . '.htaccess', $htaccess_content);
-    
-    // También en la raíz
-    $root_htaccess = ABSPATH . '.htaccess';
-    $existing = file_exists($root_htaccess) ? file_get_contents($root_htaccess) : '';
-    
-    if (strpos($existing, '# Fast Static Cache Pro') === false) {
-        $static_rules = '
-# Fast Static Cache Pro - SERVIR ESTÁTICOS DIRECTAMENTE
-<IfModule mod_rewrite.c>
-RewriteEngine On
-
-RewriteCond %{REQUEST_METHOD} GET
-RewriteCond %{QUERY_STRING} ^$
-RewriteCond %{HTTP_COOKIE} !wordpress_logged_in_
-RewriteCond %{HTTP_COOKIE} !wp-postpass_
-RewriteCond %{HTTP_COOKIE} !comment_author_
-RewriteCond %{HTTP_COOKIE} !woocommerce_cart_hash
-RewriteCond %{REQUEST_URI} !^/wp-admin/
-RewriteCond %{REQUEST_URI} !^/wp-content/
-RewriteCond %{REQUEST_URI} !^/wp-includes/
-RewriteCond %{REQUEST_URI} !^/wp-json/
-
-# Página principal
-RewriteCond %{REQUEST_URI} ^/$
-RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/fast-static-cache/index/index.html -f
-RewriteRule ^$ wp-content/cache/fast-static-cache/index/index.html [L]
-
-# Otras páginas
-RewriteCond %{REQUEST_URI} !^/$
-RewriteCond %{DOCUMENT_ROOT}/wp-content/cache/fast-static-cache%{REQUEST_URI}/index.html -f
-RewriteRule ^(.*)$ wp-content/cache/fast-static-cache/$1/index.html [L]
-</IfModule>
-
-# Fin Fast Static Cache Pro
-
-';
-        
-        file_put_contents($root_htaccess, $static_rules . $existing);
-    }
 }
 
 /**

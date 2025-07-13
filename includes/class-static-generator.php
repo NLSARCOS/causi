@@ -1,6 +1,7 @@
 <?php
 /**
- * Generador de archivos estáticos ultra optimizado
+ * Generador de archivos estáticos CONSERVADOR
+ * Mantiene la apariencia exacta del sitio - Compatible con Elementor
  */
 class FSC_Static_Generator {
     
@@ -22,6 +23,10 @@ class FSC_Static_Generator {
         add_action('save_post', array($this, 'clear_post_cache'));
         add_action('comment_post', array($this, 'clear_post_cache'));
         add_action('wp_set_comment_status', array($this, 'clear_post_cache'));
+        
+        // Hooks específicos para Elementor
+        add_action('elementor/editor/after_save', array($this, 'clear_elementor_cache'));
+        add_action('elementor/core/files/clear_cache', array($this, 'clear_elementor_cache'));
     }
     
     /**
@@ -105,15 +110,16 @@ class FSC_Static_Generator {
     }
     
     /**
-     * GENERAR ARCHIVO ESTÁTICO ULTRA OPTIMIZADO
+     * GENERAR ARCHIVO ESTÁTICO CONSERVADOR
+     * NO modifica el HTML - Solo lo guarda tal como está
      */
     public function generate_static_file($buffer) {
         if (!$this->should_save_buffer($buffer)) {
             return $buffer;
         }
         
-        // Optimizar HTML de forma ultra agresiva
-        $optimized_html = $this->optimize_html_ultra($buffer);
+        // MODO CONSERVADOR - Solo optimizaciones mínimas que NO afecten la apariencia
+        $optimized_html = $this->optimize_html_conservatively($buffer);
         
         // Obtener ruta del archivo
         $static_file = $this->get_static_file_path();
@@ -145,144 +151,32 @@ class FSC_Static_Generator {
     }
     
     /**
-     * OPTIMIZACIÓN HTML ULTRA AGRESIVA
+     * OPTIMIZACIÓN CONSERVADORA - NO MODIFICA LA APARIENCIA
+     * Solo optimizaciones que NO rompan Elementor, Divi, etc.
      */
-    private function optimize_html_ultra($html) {
-        // 1. Minificar HTML agresivamente
-        $html = $this->minify_html_aggressive($html);
+    private function optimize_html_conservatively($html) {
+        // Solo aplicar si el modo conservador está habilitado
+        if (!get_option('fsc_conservative_mode', true)) {
+            return $html; // Devolver HTML sin modificar
+        }
         
-        // 2. Optimizar CSS inline
-        $html = $this->optimize_inline_css($html);
+        // OPTIMIZACIONES MÍNIMAS Y SEGURAS:
         
-        // 3. Optimizar JavaScript inline
-        $html = $this->optimize_inline_js($html);
+        // 1. Solo eliminar comentarios HTML que NO sean de IE o Elementor
+        $html = preg_replace('/<!--(?!\s*(?:\[if [^\]]+]|<!|>|elementor|divi))(?:(?!-->).)*-->/s', '', $html);
         
-        // 4. Optimizar imágenes
-        $html = $this->optimize_images($html);
+        // 2. NO tocar espacios entre tags - puede romper CSS
+        // 3. NO minificar CSS inline - puede romper Elementor
+        // 4. NO tocar JavaScript - puede romper funcionalidad
+        // 5. NO modificar imágenes - puede romper lazy loading de temas
         
-        // 5. Preload recursos críticos
-        $html = $this->add_preload_headers($html);
-        
-        // 6. Añadir información de caché
+        // Solo añadir información de caché al final
         $cache_info = sprintf(
-            "\n<!-- Fast Static Cache Pro: %s | %s | Object Cache: %s -->",
+            "\n<!-- Fast Static Cache Pro: %s | CONSERVATIVE MODE | Object Cache: %s -->",
             date('Y-m-d H:i:s'),
-            'ULTRA-OPTIMIZED',
             strtoupper($this->object_cache->get_info()['type'])
         );
         $html .= $cache_info;
-        
-        return $html;
-    }
-    
-    /**
-     * Minificar HTML de forma agresiva
-     */
-    private function minify_html_aggressive($html) {
-        // Eliminar comentarios HTML (excepto IE)
-        $html = preg_replace('/<!--(?!\s*(?:\[if [^\]]+]|<!|>))(?:(?!-->).)*-->/s', '', $html);
-        
-        // Eliminar espacios entre tags
-        $html = preg_replace('/>\s+</', '><', $html);
-        
-        // Eliminar espacios al inicio y final de líneas
-        $html = preg_replace('/^\s+/m', '', $html);
-        $html = preg_replace('/\s+$/m', '', $html);
-        
-        // Eliminar líneas vacías
-        $html = preg_replace('/\n\s*\n/', "\n", $html);
-        
-        // Eliminar espacios excesivos
-        $html = preg_replace('/\s+/', ' ', $html);
-        
-        return trim($html);
-    }
-    
-    /**
-     * Optimizar CSS inline
-     */
-    private function optimize_inline_css($html) {
-        $html = preg_replace_callback('/<style[^>]*>(.*?)<\/style>/is', function($matches) {
-            $css = $matches[1];
-            
-            // Minificar CSS
-            $css = preg_replace('/\/\*[^*]*\*+([^\/][^*]*\*+)*\//', '', $css);
-            $css = str_replace(array("\r\n", "\r", "\n", "\t", '  '), '', $css);
-            $css = str_replace(array('; ', ' ;', ' {', '{ ', ' }', '} ', ': ', ' :'), 
-                              array(';', ';', '{', '{', '}', '}', ':', ':'), $css);
-            
-            return '<style>' . trim($css) . '</style>';
-        }, $html);
-        
-        return $html;
-    }
-    
-    /**
-     * Optimizar JavaScript inline
-     */
-    private function optimize_inline_js($html) {
-        $html = preg_replace_callback('/<script[^>]*>(.*?)<\/script>/is', function($matches) {
-            $js = $matches[1];
-            
-            // Minificar JS básico
-            $js = preg_replace('/\/\/.*$/m', '', $js);
-            $js = preg_replace('/\/\*[\s\S]*?\*\//', '', $js);
-            $js = preg_replace('/\s+/', ' ', $js);
-            
-            return '<script>' . trim($js) . '</script>';
-        }, $html);
-        
-        return $html;
-    }
-    
-    /**
-     * Optimizar imágenes
-     */
-    private function optimize_images($html) {
-        // Añadir lazy loading a imágenes
-        $html = preg_replace_callback('/<img([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i', function($matches) {
-            $before = $matches[1];
-            $src = $matches[2];
-            $after = $matches[3];
-            
-            // No tocar imágenes críticas
-            $critical_patterns = array('logo', 'icon', 'header', 'hero', 'banner');
-            foreach ($critical_patterns as $pattern) {
-                if (stripos($matches[0], $pattern) !== false) {
-                    return $matches[0];
-                }
-            }
-            
-            // Añadir lazy loading
-            if (strpos($after, 'loading=') === false) {
-                $after .= ' loading="lazy"';
-            }
-            
-            if (strpos($after, 'decoding=') === false) {
-                $after .= ' decoding="async"';
-            }
-            
-            return '<img' . $before . 'src="' . $src . '"' . $after . '>';
-        }, $html);
-        
-        return $html;
-    }
-    
-    /**
-     * Añadir headers de preload
-     */
-    private function add_preload_headers($html) {
-        $preload_headers = '';
-        
-        // Preconnect a dominios externos
-        $preload_headers .= '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n";
-        $preload_headers .= '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
-        
-        // DNS prefetch
-        $preload_headers .= '<link rel="dns-prefetch" href="//fonts.googleapis.com">' . "\n";
-        $preload_headers .= '<link rel="dns-prefetch" href="//fonts.gstatic.com">' . "\n";
-        
-        $html = str_replace('</head>', $preload_headers . '</head>', $html);
         
         return $html;
     }
@@ -304,6 +198,16 @@ class FSC_Static_Generator {
         // Hay errores PHP
         if (strpos($buffer, 'Fatal error') !== false || 
             strpos($buffer, 'Parse error') !== false) {
+            return false;
+        }
+        
+        // Verificar que no sea una respuesta AJAX
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            return false;
+        }
+        
+        // Verificar que no sea REST API
+        if (defined('REST_REQUEST') && REST_REQUEST) {
             return false;
         }
         
@@ -338,6 +242,37 @@ class FSC_Static_Generator {
     }
     
     /**
+     * Limpiar caché específico de Elementor
+     */
+    public function clear_elementor_cache($post_id = null) {
+        // Limpiar caché del post específico
+        if ($post_id) {
+            $post_url = get_permalink($post_id);
+            $this->clear_static_file_by_url($post_url);
+        }
+        
+        // Limpiar página principal (puede tener widgets globales)
+        $this->clear_static_file_by_url(home_url());
+        
+        // Limpiar todas las páginas si es un template global
+        if (get_post_type($post_id) === 'elementor_library') {
+            $this->clear_all_cache();
+        }
+    }
+    
+    /**
+     * Limpiar todo el caché
+     */
+    public function clear_all_cache() {
+        if (is_dir(FSC_CACHE_DIR)) {
+            $this->delete_directory_contents(FSC_CACHE_DIR);
+        }
+        
+        // Limpiar object cache también
+        $this->object_cache->flush();
+    }
+    
+    /**
      * Limpiar archivo estático por URL
      */
     private function clear_static_file_by_url($url) {
@@ -365,5 +300,49 @@ class FSC_Static_Generator {
         
         $cache_key = 'excluded_' . md5($path);
         $this->object_cache->delete($cache_key);
+    }
+    
+    /**
+     * Eliminar contenido de directorio
+     */
+    private function delete_directory_contents($dir) {
+        if (!is_dir($dir)) {
+            return false;
+        }
+        
+        $files = array_diff(scandir($dir), array('.', '..', '.htaccess'));
+        
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            if (is_dir($path)) {
+                $this->delete_directory($path);
+            } else {
+                unlink($path);
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Eliminar directorio
+     */
+    private function delete_directory($dir) {
+        if (!is_dir($dir)) {
+            return false;
+        }
+        
+        $files = array_diff(scandir($dir), array('.', '..'));
+        
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            if (is_dir($path)) {
+                $this->delete_directory($path);
+            } else {
+                unlink($path);
+            }
+        }
+        
+        return rmdir($dir);
     }
 }

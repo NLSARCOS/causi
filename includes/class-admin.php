@@ -1,6 +1,6 @@
 <?php
 /**
- * Panel de administración ultra optimizado
+ * Panel de administración conservador
  */
 class FSC_Admin {
     
@@ -189,6 +189,7 @@ class FSC_Admin {
         register_setting('fsc_settings', 'fsc_enabled');
         register_setting('fsc_settings', 'fsc_cache_lifetime');
         register_setting('fsc_settings', 'fsc_excluded_pages');
+        register_setting('fsc_settings', 'fsc_conservative_mode');
     }
     
     public function admin_page() {
@@ -200,7 +201,7 @@ class FSC_Admin {
                 <span class="fsc-logo">⚡</span>
                 Fast Static Cache Pro
                 <span class="fsc-version">v<?php echo FSC_VERSION; ?></span>
-                <span class="fsc-mode">ULTRA OPTIMIZADO</span>
+                <span class="fsc-mode">CONSERVADOR</span>
             </h1>
             
             <!-- Estado del sistema -->
@@ -212,6 +213,13 @@ class FSC_Admin {
                         <span class="fsc-status-label">Caché Estático:</span>
                         <span class="fsc-status-value <?php echo get_option('fsc_enabled', true) ? 'active' : 'inactive'; ?>">
                             <?php echo get_option('fsc_enabled', true) ? '🟢 ACTIVO' : '🔴 INACTIVO'; ?>
+                        </span>
+                    </div>
+                    
+                    <div class="fsc-status-item">
+                        <span class="fsc-status-label">Modo:</span>
+                        <span class="fsc-status-value active">
+                            🛡️ CONSERVADOR (Compatible con Elementor)
                         </span>
                     </div>
                     
@@ -252,10 +260,10 @@ class FSC_Admin {
                 </div>
                 
                 <div class="fsc-stat-card">
-                    <div class="fsc-stat-icon">⚡</div>
+                    <div class="fsc-stat-icon">🛡️</div>
                     <div class="fsc-stat-content">
-                        <div class="fsc-stat-number">ULTRA</div>
-                        <div class="fsc-stat-label">Velocidad</div>
+                        <div class="fsc-stat-number">SAFE</div>
+                        <div class="fsc-stat-label">Modo Conservador</div>
                     </div>
                 </div>
             </div>
@@ -292,8 +300,18 @@ class FSC_Admin {
                             <td>
                                 <label>
                                     <input type="checkbox" name="fsc_enabled" value="1" <?php checked(get_option('fsc_enabled', true)); ?> />
-                                    Activar caché estático ultra optimizado
+                                    Activar caché estático conservador
                                 </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Modo Conservador</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="fsc_conservative_mode" value="1" <?php checked(get_option('fsc_conservative_mode', true)); ?> />
+                                    Mantener apariencia exacta (Recomendado para Elementor)
+                                </label>
+                                <p class="description">Desactiva optimizaciones que puedan romper el diseño</p>
                             </td>
                         </tr>
                         <tr>
@@ -320,19 +338,20 @@ class FSC_Admin {
             <div class="fsc-info-section">
                 <h3>Información Técnica</h3>
                 <ul>
-                    <li><strong>Modo:</strong> Ultra Optimizado</li>
+                    <li><strong>Modo:</strong> Conservador (Compatible con Elementor, Divi, etc.)</li>
                     <li><strong>Servir archivos:</strong> Directamente sin cargar WordPress</li>
                     <li><strong>Object Cache:</strong> <?php echo strtoupper($cache_info['type']); ?> (<?php echo $cache_info['connected'] ? 'Conectado' : 'Desconectado'; ?>)</li>
                     <li><strong>Compresión:</strong> Gzip automático</li>
-                    <li><strong>Headers:</strong> Ultra optimizados para velocidad</li>
-                    <li><strong>Minificación:</strong> HTML, CSS, JS inline</li>
+                    <li><strong>Headers:</strong> Conservadores para compatibilidad</li>
+                    <li><strong>Optimizaciones:</strong> Mínimas para mantener apariencia</li>
+                    <li><strong>Compatibilidad:</strong> Elementor, Divi, WooCommerce, etc.</li>
                 </ul>
             </div>
         </div>
         <?php
     }
     
-    // AJAX Handlers
+    // AJAX Handlers (mismos que antes pero conservadores)
     public function ajax_generate_all_pages() {
         check_ajax_referer('fsc_admin_nonce', 'nonce');
         
@@ -404,11 +423,11 @@ class FSC_Admin {
     }
     
     /**
-     * Generar todas las páginas estáticas
+     * Generar todas las páginas estáticas de forma conservadora
      */
     private function generate_all_static_pages() {
         set_time_limit(0);
-        ini_set('memory_limit', '1024M');
+        ini_set('memory_limit', '512M'); // Menos memoria para ser conservador
         
         $results = array(
             'total' => 0,
@@ -428,14 +447,14 @@ class FSC_Admin {
                 $results['errors']++;
             }
             
-            usleep(100000); // 0.1 segundos entre requests
+            usleep(200000); // 0.2 segundos entre requests (más conservador)
         }
         
         return $results;
     }
     
     /**
-     * Obtener todas las URLs del sitio
+     * Obtener todas las URLs del sitio (limitado para ser conservador)
      */
     private function get_all_site_urls() {
         global $wpdb;
@@ -445,13 +464,13 @@ class FSC_Admin {
         // Página principal
         $urls[] = home_url();
         
-        // Páginas
+        // Páginas (limitado)
         $pages = $wpdb->get_results("
             SELECT ID FROM {$wpdb->posts} 
             WHERE post_type = 'page' 
             AND post_status = 'publish'
             ORDER BY menu_order, post_date DESC
-            LIMIT 50
+            LIMIT 30
         ");
         
         foreach ($pages as $page) {
@@ -461,13 +480,13 @@ class FSC_Admin {
             }
         }
         
-        // Posts
+        // Posts (limitado)
         $posts = $wpdb->get_results("
             SELECT ID FROM {$wpdb->posts} 
             WHERE post_type = 'post' 
             AND post_status = 'publish'
             ORDER BY post_date DESC
-            LIMIT 50
+            LIMIT 30
         ");
         
         foreach ($posts as $post) {
@@ -481,13 +500,13 @@ class FSC_Admin {
     }
     
     /**
-     * Generar archivo estático para una URL
+     * Generar archivo estático para una URL (conservador)
      */
     private function generate_static_file_for_url($url) {
         $args = array(
             'timeout' => 30,
             'headers' => array(
-                'User-Agent' => 'Fast-Static-Cache-Pro/3.0'
+                'User-Agent' => 'Fast-Static-Cache-Pro/3.0-Conservative'
             ),
             'cookies' => array(),
             'sslverify' => false
@@ -509,7 +528,7 @@ class FSC_Admin {
             return false;
         }
         
-        // Guardar archivo estático
+        // Guardar archivo estático SIN MODIFICACIONES
         $parsed_url = parse_url($url);
         $path = $parsed_url['path'] ?? '/';
         $path = rtrim($path, '/');
@@ -577,7 +596,7 @@ class FSC_Admin {
             margin-left: 10px; 
         }
         .fsc-mode { 
-            background: #d63638; 
+            background: #00a32a; 
             color: white; 
             padding: 2px 8px; 
             border-radius: 12px; 
